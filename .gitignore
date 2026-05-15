@@ -1,0 +1,13 @@
+.venv/
+.env
+data/
+miscellaneous/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
