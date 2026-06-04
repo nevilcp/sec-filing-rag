@@ -1,11 +1,23 @@
-"""Semantic caching layer using Qdrant."""
+"""
+rag/cache.py
+
+Semantic caching layer using Qdrant.
+
+Responsibilities:
+  - Store and retrieve LLM generation responses based on query semantic similarity
+  - Manage the initialization of the cache collection
+
+Dependencies:
+  - qdrant_client
+"""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from qdrant_client import models
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from src.core import config
 from src.core.embeddings import embed_query
@@ -16,14 +28,38 @@ logger = get_logger(__name__)
 
 
 class SemanticCache:
-    """Qdrant-backed semantic cache for generation responses."""
+    """Qdrant-backed semantic cache for generation responses"""
 
     def __init__(self) -> None:
-        """Initialize the Qdrant cache collection."""
+        """Initialize the semantic cache collection in Qdrant.
+
+        If the collection already exists but has a mismatched vector size
+        (e.g. after switching embedding models), the old collection is
+        deleted and recreated, discarding all cached responses.
+        """
         self.client = get_qdrant_client()
         self.collection_name = config.QDRANT_CACHE_COLLECTION
 
-        if not self.client.collection_exists(collection_name=self.collection_name):
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            existing_size = collection_info.config.params.vectors.size
+            if existing_size != config.QDRANT_VECTOR_SIZE:
+                logger.warning(
+                    "Existing Qdrant cache collection has vector size %d but config requires %d.\n"
+                    "         Deleting and recreating — all cached responses will be lost.\n"
+                    "         The cache will repopulate automatically on subsequent queries.",
+                    existing_size,
+                    config.QDRANT_VECTOR_SIZE,
+                )
+                self.client.delete_collection(self.collection_name)
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=models.VectorParams(
+                        size=config.QDRANT_VECTOR_SIZE,
+                        distance=models.Distance.COSINE,
+                    ),
+                )
+        except (UnexpectedResponse, ValueError):
             logger.info("Creating Qdrant cache collection: %s", self.collection_name)
             self.client.create_collection(
                 collection_name=self.collection_name,
@@ -34,9 +70,14 @@ class SemanticCache:
             )
 
     def lookup(self, query_text: str) -> str | None:
-        """
-        Check if a semantically similar query exists in the cache.
-        Returns the cached response_text if found (score >= threshold), else None.
+        """Check if a semantically similar query exists in the cache.
+
+        Args:
+            query_text: The user's raw query string.
+
+        Returns:
+            The cached response text if the cosine similarity is >= the configured
+            threshold, otherwise None
         """
         query_embedding = embed_query(query_text)
 
@@ -60,8 +101,15 @@ class SemanticCache:
         return None
 
     def store(self, query_text: str, response_text: str) -> None:
-        """
-        Store a new query and response in the semantic cache.
+        """Store a query-response pair in the semantic cache.
+
+        Uses UUID5 on the raw query string to derive a deterministic point
+        ID, so repeated stores for the same query overwrite rather than
+        duplicate the cached entry.
+
+        Args:
+            query_text: The original user query string.
+            response_text: The generated response to cache.
         """
         query_embedding = embed_query(query_text)
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, query_text))
@@ -69,7 +117,7 @@ class SemanticCache:
         payload = {
             "query": query_text,
             "response_text": response_text,
-            "stored_at": datetime.utcnow().isoformat(),
+            "stored_at": datetime.now(UTC).isoformat(),
         }
 
         self.client.upsert(

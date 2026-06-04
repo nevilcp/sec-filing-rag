@@ -1,108 +1,97 @@
-"""Centralized embedding client with rate-limited retry wrappers.
+"""
+core/embeddings.py
 
-Uses the ``google-genai`` SDK directly (instead of the LangChain wrapper)
-to correctly batch multiple texts into a single ``embed_content`` call that
-returns one embedding per input text.
+Centralized embedding client for the SEC compliance RAG system.
+
+Responsibilities:
+  - Provide local embedding capabilities for query and document chunks.
+  - Abstract BAAI/bge-m3 model initialization and thread-safe lazy loading.
+
+Not responsible for:
+  - Chunking or text splitting (see rag/ingest.py).
+  - Vector storage or retrieval (see rag/vector_store.py).
+
+Dependencies:
+  - FlagEmbedding >= 1.2
+  - BGE_M3_MODEL_NAME and EMBEDDING_BATCH_SIZE must be set in config.
 """
 
 from __future__ import annotations
 
-import os
-from collections.abc import Sequence
+import threading
 
-from google import genai
-from google.genai.types import Content, Part
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from FlagEmbedding import BGEM3FlagModel
 
 from src.core import config
 from src.core.logging import get_logger
-from src.core.rate_limiter import estimate_tokens, get_embedding_rate_limiter
 
 logger = get_logger(__name__)
 
-_CLIENT: genai.Client | None = None
-
-_RATE_LIMIT_ERROR_MARKERS: tuple[str, ...] = (
-    "rate limit",
-    "too many requests",
-    "resource exhausted",
-    "resource_exhausted",
-    "quota",
-    "429",
-)
+_MODEL: BGEM3FlagModel | None = None
+_MODEL_LOCK = threading.Lock()
 
 
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    message = str(exc).lower()
-    return any(marker in message for marker in _RATE_LIMIT_ERROR_MARKERS)
+def _get_model() -> BGEM3FlagModel:
+    """Return the singleton BGE-M3 model, initializing it on first call.
 
+    Uses a threading lock to prevent duplicate initialization when multiple
+    threads request embeddings simultaneously during application startup.
 
-def _require_gemini_api_key() -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY is required but not set. "
-            "Define GEMINI_API_KEY in your environment before creating embedding clients."
-        )
-    return api_key
-
-
-def _get_client() -> genai.Client:
-    """Return cached genai Client."""
-    global _CLIENT
-    if _CLIENT is None:
-        _CLIENT = genai.Client(api_key=_require_gemini_api_key())
-    return _CLIENT
-
-
-@retry(
-    reraise=True,
-    retry=retry_if_exception(_is_rate_limit_error),
-    wait=wait_exponential(
-        multiplier=config.RETRY_MULTIPLIER_SECONDS,
-        min=config.RETRY_MIN_WAIT_SECONDS,
-        max=config.RETRY_MAX_WAIT_SECONDS,
-    ),
-    stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
-)
-def embed_query(text: str) -> list[float]:
-    """Embed a single query string with rate limiting and retry."""
-    limiter = get_embedding_rate_limiter()
-    tokens = estimate_tokens([text])
-    limiter.acquire(tokens)
-
-    client = _get_client()
-    response = client.models.embed_content(
-        model=config.EMBEDDING_MODEL_NAME,
-        contents=Content(parts=[Part(text=text)]),
-    )
-    return list(response.embeddings[0].values)
-
-
-@retry(
-    reraise=True,
-    retry=retry_if_exception(_is_rate_limit_error),
-    wait=wait_exponential(
-        multiplier=config.RETRY_MULTIPLIER_SECONDS,
-        min=config.RETRY_MIN_WAIT_SECONDS,
-        max=config.RETRY_MAX_WAIT_SECONDS,
-    ),
-    stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
-)
-def embed_documents(texts: Sequence[str]) -> list[list[float]]:
-    """Embed multiple documents in a single API call with rate limiting and retry.
-
-    Each text is wrapped in its own ``Content`` object so the API returns
-    one embedding vector per input text.
+    Returns:
+        The initialized BGEM3FlagModel instance.
     """
-    limiter = get_embedding_rate_limiter()
-    tokens = estimate_tokens(texts)
-    limiter.acquire(tokens)
+    global _MODEL
+    with _MODEL_LOCK:
+        if _MODEL is None:
+            logger.info("Loading BGE-M3 embedding model — first call will download weights (~2.3 GB).")
+            _MODEL = BGEM3FlagModel(
+                config.BGE_M3_MODEL_NAME,
+                use_fp16=True,
+                normalize_embeddings=True,
+            )
+        return _MODEL
 
-    client = _get_client()
-    contents = [Content(parts=[Part(text=t)]) for t in texts]
-    response = client.models.embed_content(
-        model=config.EMBEDDING_MODEL_NAME,
-        contents=contents,
+
+def embed_query(text: str) -> list[float]:
+    """Encode a single query string into a dense embedding vector.
+
+    Uses a batch size of 1 and a conservative max_length of 512 tokens,
+    appropriate for short user queries rather than long documents.
+
+    Args:
+        text: The raw query string to embed.
+
+    Returns:
+        A list of floats representing the normalized dense embedding vector.
+    """
+    model = _get_model()
+    embeddings = model.encode(
+        [text],
+        batch_size=1,
+        max_length=512,
+        return_dense=True,
     )
-    return [list(emb.values) for emb in response.embeddings]
+    return embeddings["dense_vecs"][0].tolist()
+
+
+def embed_documents(texts: list[str]) -> list[list[float]]:
+    """Encode a batch of document strings into dense embedding vectors.
+
+    Uses an 8192-token max_length to capture full section-length chunks.
+    Batch size is controlled by config.EMBEDDING_BATCH_SIZE to avoid
+    GPU/CPU OOM during large ingestion runs.
+
+    Args:
+        texts: A list of document text strings to embed.
+
+    Returns:
+        A list of embedding vectors, one per input text, in the same order.
+    """
+    model = _get_model()
+    embeddings = model.encode(
+        texts,
+        batch_size=config.EMBEDDING_BATCH_SIZE,
+        max_length=8192,
+        return_dense=True,
+    )
+    return [vec.tolist() for vec in embeddings["dense_vecs"]]

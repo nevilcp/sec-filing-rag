@@ -1,13 +1,51 @@
+# Python virtual environments
 .venv/
+venv/
+env/
+ENV/
 .env
-data/
-miscellaneous/
+
+# Compiled Python bytecode
 __pycache__/
 *.py[cod]
-.ipynb_checkpoints/
+*$py.class
+*.so
+
+# Caching and tooling
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
+
+# Python packaging artifacts
 dist/
 build/
 *.egg-info/
+*.egg
+.eggs/
+
+# System metadata
+.DS_Store
+.ipynb_checkpoints/
+Thumbs.db
+
+# --- Project Specific ---
+
+# Antigravity agent configurations and rules
+.agents/
+
+# Vectorstore, BM25 indices, and downloaded EDGAR XML staging files
+data/
+!data/.gitkeep
+
+# Ignore log files but keep the directory structure
+logs/**/*.log
+logs/**/*.log.*
+!logs/**/.gitkeep
+!logs/README.md
+
+# Experimental scratchpads
+miscellaneous/

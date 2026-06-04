@@ -1,4 +1,21 @@
-"""LangGraph assembly for fully automated compliance workflow."""
+"""
+agent/graph.py
+
+LangGraph assembly for the SEC compliance CRAG workflow.
+
+Responsibilities:
+  - Define the StateGraph topology for the CRAG agent pipeline.
+  - Wire conditional routing logic to execution nodes.
+  - Compile the graph with a MemorySaver checkpointer for multi-turn
+    session continuity.
+
+Not responsible for:
+  - Node business logic (see agent/nodes.py).
+  - Routing predicate definitions (see agent/router.py).
+
+Dependencies:
+  - langgraph
+"""
 
 from __future__ import annotations
 
@@ -18,6 +35,12 @@ from src.agent.state import ComplianceState
 
 
 def compile_graph():
+    """Compile the executable LangGraph state machine for the CRAG workflow.
+
+    Returns:
+        A CompiledGraph instance backed by MemorySaver, ready for
+        invocation via graph.invoke().
+    """
     graph_builder = StateGraph(ComplianceState)
 
     graph_builder.add_node("process_input", process_input)
@@ -27,17 +50,18 @@ def compile_graph():
     graph_builder.add_node("rewrite_query", rewrite_query)
     graph_builder.add_node("respond", respond)
 
-    graph_builder.add_edge(START, "process_input")
-    graph_builder.add_edge("process_input", "cache_check")
+    graph_builder.add_edge(START, "cache_check")
 
     graph_builder.add_conditional_edges(
         "cache_check",
         route_after_cache_check,
         {
             "respond": "respond",
-            "retrieve_and_reason": "retrieve_and_reason",
+            "process_input": "process_input",
         },
     )
+
+    graph_builder.add_edge("process_input", "retrieve_and_reason")
 
     graph_builder.add_edge("retrieve_and_reason", "grade_retrieval")
     graph_builder.add_conditional_edges(

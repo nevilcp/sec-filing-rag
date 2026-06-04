@@ -1,0 +1,12 @@
+1. What were the total net sales reported by AAPL in its most recent filing, and what were the primary drivers of any revenue changes?
+2. Detail the supply chain and geopolitical risk factors mentioned by NVDA in their latest SEC filing.
+3. How did MSFT characterize its strategic investments in artificial intelligence within the Management's Discussion and Analysis (MD&A) section?
+4. Compare the net interest income and provision for credit losses between JPM and BAC.
+5. What are the material pending legal proceedings or contingencies disclosed by JNJ?
+6. What was the medical care ratio (MCR) reported by UNH, and how did management explain the year-over-year change?
+7. Contrast the research and development (R&D) expense trends of GOOGL versus AAPL as a percentage of total revenue.
+8. Summarize the share repurchase programs and dividend payouts executed by MS during the reported period.
+9. What specific regulatory risks or pending FDA approvals did PFE highlight as material to its future business operations?
+10. According to GS's filing, how have changing interest rates and macroeconomic conditions impacted their investment banking revenue?
+11. Describe ABT's long-term debt profile and its liquidity position going into the next fiscal year.
+12. Based on the outlook provided in the SEC filings, what are the primary growth drivers and anticipated challenges for MSFT's Azure cloud business?

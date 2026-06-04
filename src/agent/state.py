@@ -1,4 +1,15 @@
-"""State contract for the compliance LangGraph workflow."""
+"""
+agent/state.py
+
+State contract for the compliance LangGraph workflow.
+
+Responsibilities:
+  - Define the structured state payload passed between graph nodes
+  - Enforce typing for retrieval results, CRAG tracking, and outputs
+
+Dependencies:
+  - typing
+"""
 
 from __future__ import annotations
 
@@ -6,6 +17,13 @@ from typing import Literal, TypedDict
 
 
 class ComplianceState(TypedDict):
+    """Immutable state contract passed between every node in the CRAG graph.
+
+    All fields are set by specific nodes; downstream nodes must treat
+    absent keys as their zero value (empty string, empty list, False).
+    The graph compiler enforces this via LangGraph's TypedDict reducer.
+    """
+
     query: str
     messages: list
     retrieved_docs: list[dict]
@@ -21,4 +39,6 @@ class ComplianceState(TypedDict):
         "temporal",
         "general",
     ]
+    context_relevance: Literal["relevant", "irrelevant"] | None
     tool_calls_made: int
+    company_filter: str | None

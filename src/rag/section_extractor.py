@@ -1,4 +1,17 @@
-"""EDGAR filing HTML to clean section-segmented text extractor."""
+"""
+rag/section_extractor.py
+
+EDGAR filing HTML to clean section-segmented text extractor.
+
+Responsibilities:
+  - Parse raw EDGAR HTML filings into structured text sections
+  - Execute a 4-tier fallback extraction strategy to handle varying document structures
+  - Clean and normalize extracted text to remove boilerplate and tables
+
+Dependencies:
+  - bs4 (BeautifulSoup)
+  - lxml
+"""
 
 from __future__ import annotations
 
@@ -15,18 +28,28 @@ logger = get_logger(__name__)
 _CANONICAL_NAMES = {
     "Item 1": "business_overview",
     "Item 1A": "risk_factors",
+    "Item 1C": "cybersecurity",
+    "Item 3": "legal_proceedings",
     "Item 7": "mda",
     "Item 7A": "quantitative_risk",
 }
 
 
 def _clean_extracted_text(text: str) -> str:
-    """Applies post-extraction cleaning rules to the text."""
-    # 1. Strip HTML tags (in case any raw HTML made it through)
+    """Apply post-extraction cleaning rules to remove boilerplate and noise.
+
+    Strips residual HTML tags, drops short lines (< 20 chars), eliminates
+    purely numeric lines (financial tables), and collapses excess whitespace.
+
+    Args:
+        text: Raw extracted text, possibly containing HTML fragments.
+
+    Returns:
+        Cleaned, normalized plain text suitable for chunking.
+    """
     soup = BeautifulSoup(text, "lxml")
     text = soup.get_text(separator=" ")
 
-    # 2. Line-by-line filtering
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
@@ -34,16 +57,13 @@ def _clean_extracted_text(text: str) -> str:
         if not line_stripped:
             continue
 
-        # Strip lines under 20 characters
         if len(line_stripped) < 20:
             continue
 
-        # Strip purely numeric lines
         numeric_test = re.sub(r"[\s,\.$%]", "", line_stripped)
         if numeric_test.isdigit():
             continue
 
-        # Strip purely punctuation lines
         punct_test = re.sub(rf"[{re.escape(string.punctuation)}\s]", "", line_stripped)
         if not punct_test:
             continue
@@ -52,7 +72,6 @@ def _clean_extracted_text(text: str) -> str:
 
     text = "\n".join(cleaned_lines)
 
-    # 3. Collapse whitespace
     text = re.sub(r"[ ]{3,}", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
@@ -60,15 +79,29 @@ def _clean_extracted_text(text: str) -> str:
 
 
 def _extract_tier_1(soup: BeautifulSoup, item: str) -> str | None:
-    """Anchor-based extraction."""
+    """Attempt anchor-based section extraction (Tier 1 — highest fidelity).
+
+    Locates an HTML anchor whose id or name attribute exactly matches the
+    normalised item label (e.g. 'item1a'), then collects all subsequent
+    text until the next sibling item anchor is encountered.
+
+    Args:
+        soup: Parsed BeautifulSoup tree of the filing HTML.
+        item: The SEC item label to locate (e.g. 'Item 1A').
+
+    Returns:
+        The extracted text string, or None if no matching anchor is found.
+    """
     item_clean = item.replace(" ", "").lower()
     pattern = re.compile(rf"^{item_clean}$", re.IGNORECASE)
 
     anchor = soup.find(
-        lambda tag: tag.name
-        and (
-            (tag.get("id") and pattern.match(tag.get("id")))
-            or (tag.name == "a" and tag.get("name") and pattern.match(tag.get("name")))
+        lambda tag: (
+            tag.name
+            and (
+                (tag.get("id") and pattern.match(tag.get("id")))
+                or (tag.name == "a" and tag.get("name") and pattern.match(tag.get("name")))
+            )
         )
     )
 
@@ -80,7 +113,6 @@ def _extract_tier_1(soup: BeautifulSoup, item: str) -> str | None:
 
     for elem in anchor.next_elements:
         if getattr(elem, "name", None):
-            # Check for next anchor
             if elem.get("id") and next_pattern.match(elem.get("id")):
                 break
             if elem.name == "a" and elem.get("name") and next_pattern.match(elem.get("name")):
@@ -92,12 +124,23 @@ def _extract_tier_1(soup: BeautifulSoup, item: str) -> str | None:
 
 
 def _extract_tier_2(soup: BeautifulSoup, item: str) -> str | None:
-    """Heading-tag detection extraction."""
-    pattern = re.compile(rf"^\s*{item.replace(' ', r'\s+')}[\.\s:-]", re.IGNORECASE)
+    """Attempt heading-tag section extraction (Tier 2 — structural fallback).
 
-    heading = soup.find(
-        lambda tag: tag.name in ["h1", "h2", "h3"] and pattern.match(tag.get_text(strip=True))
-    )
+    Searches h1/h2/h3 tags whose text starts with the item label, then
+    collects all subsequent text until the next heading matching a sibling
+    item pattern is found. Used when XBRL anchor IDs are absent or malformed.
+
+    Args:
+        soup: Parsed BeautifulSoup tree of the filing HTML.
+        item: The SEC item label to locate (e.g. 'Item 1A').
+
+    Returns:
+        The extracted text string, or None if no matching heading is found.
+    """
+    item_pattern = item.replace(" ", r"\s+")
+    pattern = re.compile(rf"^\s*{item_pattern}[\.\s:-]", re.IGNORECASE)
+
+    heading = soup.find(lambda tag: tag.name in ["h1", "h2", "h3"] and pattern.match(tag.get_text(strip=True)))
 
     if not heading:
         return None
@@ -109,7 +152,7 @@ def _extract_tier_2(soup: BeautifulSoup, item: str) -> str | None:
         if getattr(elem, "name", None) in ["h1", "h2", "h3"]:
             text_val = elem.get_text(strip=True)
             if pattern.match(text_val):
-                continue  # Skip our own heading components
+                continue
             if next_pattern.match(text_val):
                 break
         if isinstance(elem, str):
@@ -119,7 +162,20 @@ def _extract_tier_2(soup: BeautifulSoup, item: str) -> str | None:
 
 
 def _extract_tier_3(text: str, item: str) -> str | None:
-    """Text pattern fallback extraction."""
+    """Attempt text-pattern section extraction (Tier 3 — plain-text fallback).
+
+    Applies regex matching on the full document plain text to find item
+    boundaries. Uses the largest chunk among all pattern matches to avoid
+    selecting Table of Contents entries, which are typically very short.
+
+    Args:
+        text: Full plain text of the filing (from soup.get_text).
+        item: The SEC item label to locate (e.g. 'Item 1A').
+
+    Returns:
+        The largest matching text chunk if it exceeds 100 characters,
+        otherwise None.
+    """
     item_pattern = item.replace(" ", r"\s+")
     start_pattern = rf"(?i)\b{item_pattern}(?:[\.\s-]|:)"
     end_pattern = r"(?i)\bItem\s*\d+[A-Z]?(?:[\.\s-]|:)"
@@ -128,7 +184,6 @@ def _extract_tier_3(text: str, item: str) -> str | None:
     if not matches:
         return None
 
-    # Take the match that provides the largest chunk (helps skip TOC entries)
     best_chunk = ""
     for match in matches:
         start_idx = match.start()
@@ -148,14 +203,18 @@ def _extract_tier_3(text: str, item: str) -> str | None:
 
 
 def extract_sections(html_content: str) -> dict[str, str]:
+    """Parses HTML and returns a dict mapping canonical section names to clean text.
+
+    Uses a robust 4-tier extraction strategy to account for the high variance in
+    EDGAR filing formats.
+
+    Args:
+        html_content: Raw HTML string of the EDGAR filing.
+
+    Returns:
+        Dictionary mapping section names (e.g., 'mda', 'risk_factors') to cleaned text
     """
-    Parses HTML and returns a dict mapping canonical section names to clean text.
-    Uses a 4-tier extraction strategy.
-    """
-    # Remove XBRL inline data (strip content between <ix: tags) before any parsing
-    html_cleaned = re.sub(
-        r"<ix:[^>]*>.*?</ix:[^>]*>", "", html_content, flags=re.DOTALL | re.IGNORECASE
-    )
+    html_cleaned = re.sub(r"<ix:[^>]*>.*?</ix:[^>]*>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
 
     soup = BeautifulSoup(html_cleaned, "lxml")
     full_text = soup.get_text(separator=" ")
@@ -167,25 +226,20 @@ def extract_sections(html_content: str) -> dict[str, str]:
         key = _CANONICAL_NAMES.get(item, item.lower().replace(" ", "_"))
         content = None
 
-        # Tier 1
         content = _extract_tier_1(soup, item)
 
-        # Tier 2
         if not content or len(content.strip()) < 100:
             content = _extract_tier_2(soup, item)
 
-        # Tier 3
         if not content or len(content.strip()) < 100:
             content = _extract_tier_3(full_text, item)
 
-        # Apply cleaning and save
         if content and len(content.strip()) >= 100:
             cleaned = _clean_extracted_text(content)
             if cleaned:
                 results[key] = cleaned
                 extracted_any = True
 
-    # Tier 4 Fallback
     if not extracted_any:
         logger.warning("No sections extracted via Tiers 1-3. Falling back to full text.")
         cleaned_full = _clean_extracted_text(full_text)
