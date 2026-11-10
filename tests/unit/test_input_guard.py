@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from unittest import mock
 
+import pytest
+
 from src.guardrails.input_guard import _detect_pii_entities, _is_prompt_injection, validate_input
 
 
@@ -78,3 +80,20 @@ def test_validate_input_pii_checked_before_injection(mock_injection):
     assert is_valid is False
     assert "PII" in reason
     mock_injection.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("0.9995", True),
+        ("0.0003", False),
+        ("0.5", True),
+        ("unsafe", True),
+        ("Malicious", True),
+        ("safe", False),
+    ],
+)
+@mock.patch("src.guardrails.input_guard.invoke_with_rate_limit")
+def test_is_prompt_injection_classifier_reply_decides_block(mock_invoke, reply, expected):
+    mock_invoke.return_value = reply
+    assert _is_prompt_injection("anything") is expected

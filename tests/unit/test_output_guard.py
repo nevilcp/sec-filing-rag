@@ -66,3 +66,14 @@ def test_validate_output_with_warnings(mock_anonymize, mock_is_legal_advice):
     assert len(warnings) == 2
     assert any("PII" in w for w in warnings)
     assert any("legal advice" in w for w in warnings)
+
+
+@mock.patch("src.guardrails.output_guard.invoke_with_rate_limit")
+def test_validate_output_pii_response_keeps_pii_out_of_classifier_prompt(mock_invoke):
+    mock_invoke.return_value = "COMPLIANT"
+
+    sanitized, _ = validate_output("Reach the filer at john.doe@example.com for details.")
+
+    prompt = mock_invoke.call_args.args[1]
+    assert "john.doe@example.com" not in prompt
+    assert "john.doe@example.com" not in sanitized
