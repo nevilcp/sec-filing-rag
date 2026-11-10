@@ -214,7 +214,9 @@ def extract_sections(html_content: str) -> dict[str, str]:
     Returns:
         Dictionary mapping section names (e.g., 'mda', 'risk_factors') to cleaned text
     """
-    html_cleaned = re.sub(r"<ix:[^>]*>.*?</ix:[^>]*>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
+    # Only ix:header holds hidden XBRL metadata. Other ix:* tags wrap
+    # visible text such as financial figures, so their text stays.
+    html_cleaned = re.sub(r"<ix:header\b[^>]*>.*?</ix:header>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
 
     soup = BeautifulSoup(html_cleaned, "lxml")
     full_text = soup.get_text(separator=" ")

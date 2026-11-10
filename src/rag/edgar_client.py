@@ -24,6 +24,7 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from src.core import config
+from src.core.fileio import atomic_write_text
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -285,8 +286,7 @@ def stage_filing(cik: str, ticker: str, accession_number: str, filename: str, st
     logger.info("Downloading primary document for %s (%s)", ticker, accession_number)
     content = download_primary_document(cik, accession_number, filename)
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(file_path, content)
 
     logger.info("Staged filing to %s", file_path)
     return file_path

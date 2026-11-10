@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,11 @@ def build_bm25_index(documents: list[dict[str, Any]]) -> None:
     with docs_path.open("w", encoding="utf-8") as f:
         json.dump(documents, f)
 
+    # Drop the cached payload so the next search reloads the new index.
+    global _BM25_PAYLOAD
+    with _BM25_LOCK:
+        _BM25_PAYLOAD = None
+
 
 def load_bm25_index() -> dict[str, Any]:
     """Load the persisted BM25 index and document list from disk.
@@ -97,6 +103,7 @@ def load_bm25_index() -> dict[str, Any]:
 
 
 _BM25_PAYLOAD: dict[str, Any] | None = None
+_BM25_LOCK = threading.Lock()
 
 
 def _get_bm25_payload() -> dict[str, Any]:
@@ -110,9 +117,10 @@ def _get_bm25_payload() -> dict[str, Any]:
         load_bm25_index.
     """
     global _BM25_PAYLOAD
-    if _BM25_PAYLOAD is None:
-        _BM25_PAYLOAD = load_bm25_index()
-    return _BM25_PAYLOAD
+    with _BM25_LOCK:
+        if _BM25_PAYLOAD is None:
+            _BM25_PAYLOAD = load_bm25_index()
+        return _BM25_PAYLOAD
 
 
 def sparse_search(query_text: str, top_k: int) -> list[dict[str, Any]]:

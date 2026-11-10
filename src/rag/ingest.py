@@ -28,6 +28,7 @@ except ModuleNotFoundError:
 from src.core import config
 from src.core.corpus import get_corpus_companies, resolve_cik
 from src.core.embeddings import embed_documents
+from src.core.fileio import atomic_write_text
 from src.core.logging import get_logger
 from src.rag import bm25_index, edgar_client, section_extractor
 from src.rag.vector_store import (
@@ -88,7 +89,7 @@ def _save_checkpoint(checkpoint_path: Path, checkpoint: dict[str, Any]) -> None:
         checkpoint: The checkpoint state dict to persist.
     """
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_path.write_text(json.dumps(checkpoint, indent=2, ensure_ascii=True), encoding="utf-8")
+    atomic_write_text(checkpoint_path, json.dumps(checkpoint, indent=2, ensure_ascii=True))
 
 
 def _iter_sub_batches(items: list[Any], size: int) -> list[list[Any]]:
@@ -238,6 +239,16 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
         valid_chunks = [c for c in chunks if c.get("embedding") is not None]
         if valid_chunks:
             upsert_chunks(valid_chunks)
+
+        if len(valid_chunks) < len(chunks):
+            logger.warning(
+                "Filing %s (%s) has %d of %d chunks embedded. Leaving it unprocessed for the next run.",
+                accession_number,
+                ticker,
+                len(valid_chunks),
+                len(chunks),
+            )
+            continue
 
         checkpoint["processed_files"].append(accession_number)
         if ticker not in checkpoint["indexed_companies"]:

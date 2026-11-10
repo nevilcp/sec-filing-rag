@@ -100,9 +100,9 @@ def test_extract_sections_integration():
     html = """
     <html>
         <body>
-            <ix:nonnumeric name="us-gaap:BusinessDescription">
-                Hidden XBRL stuff
-            </ix:nonnumeric>
+            <ix:header>
+                <ix:hidden>Hidden XBRL stuff</ix:hidden>
+            </ix:header>
             <h2>Item 1. Business</h2>
             <p>This is a valid sentence that should absolutely be kept in the extraction because it is long enough.</p>
             <p>Another valid sentence that provides meaningful context for the financial analysis.</p>
@@ -131,3 +131,24 @@ def test_extract_sections_fallback():
     sections = extract_sections(html)
     assert "full_text" in sections
     assert "This is a valid sentence" in sections["full_text"]
+
+
+def test_extract_sections_keeps_ixbrl_tagged_figures():
+    html = """
+    <html>
+        <body>
+            <ix:header><ix:hidden>Hidden XBRL stuff</ix:hidden></ix:header>
+            <h2>Item 7. Management's Discussion and Analysis</h2>
+            <p>Total net sales were $<ix:nonFraction name="us-gaap:Revenues">394,328</ix:nonFraction>
+            million for the year, driven by strong demand across every product category we sell.</p>
+            <p>Products segment growth was discussed at length in the section above, with
+            <ix:nonNumeric name="dei:EntityRegistrantName">Apple Inc.</ix:nonNumeric> leading.</p>
+            <h2>Item 8. Financial Statements</h2>
+        </body>
+    </html>
+    """
+    sections = extract_sections(html)
+    text = " ".join(sections.values())
+    assert "394,328" in text
+    assert "Apple Inc." in text
+    assert "Hidden XBRL stuff" not in text
