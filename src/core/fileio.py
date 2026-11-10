@@ -1,5 +1,4 @@
-"""
-Small file-system helpers shared across packages.
+"""Small file-system helpers shared across packages.
 
 Responsibilities:
   - Write files atomically so readers never see a partial file

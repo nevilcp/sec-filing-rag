@@ -1,20 +1,20 @@
-"""
-core/config.py
-
-Centralized configuration for the SEC compliance RAG system.
+"""Centralized configuration for the SEC compliance RAG system.
 
 Responsibilities:
   - Define filesystem paths for data, logs, and indexes.
-  - Assign specific LLM models to LangGraph nodes based on
-    performance and rate-limit requirements.
+  - Assign LLM models to graph nodes based on performance and
+    rate-limit needs.
   - Configure retrieval thresholds and chunking parameters.
+  - Parse environment-driven settings once, at import time.
+  - Fail fast when EDGAR_FISCAL_YEAR is missing.
 
 Not responsible for:
-  - Runtime validation of env vars (see corpus.py and edgar_client.py).
+  - Validating API keys or EDGAR_CONTACT_EMAIL (read at call time by
+    llm_factory.py and corpus.py).
   - Rate-limit enforcement (see core/rate_limiter.py).
 
 Dependencies:
-  - python-dotenv
+  - A .env file or environment that sets EDGAR_FISCAL_YEAR.
 """
 
 import os
@@ -24,8 +24,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# GROQ_API_KEY, GEMINI_API_KEY and EDGAR_CONTACT_EMAIL are not read here.
-# Their consumers read the environment at call time because tests
+# GROQ_API_KEY, GEMINI_API_KEY and EDGAR_CONTACT_EMAIL are not read
+# here. Their consumers read the environment at call time because tests
 # monkeypatch these variables after this module has been imported.
 
 
@@ -127,7 +127,7 @@ LLM_SDK_MAX_RETRIES = 2
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 UVICORN_RELOAD = _env_flag("UVICORN_RELOAD")
-# Comma-separated list in the environment, for example for a hosted frontend.
+# Comma-separated list in the environment, for a hosted frontend.
 CORS_ORIGINS = (
     [o.strip() for o in os.environ["CORS_ORIGINS"].split(",") if o.strip()]
     if os.getenv("CORS_ORIGINS")

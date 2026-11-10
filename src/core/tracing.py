@@ -1,5 +1,4 @@
-"""
-Tracing helpers that work with or without Phoenix.
+"""Tracing helpers that work with or without Phoenix.
 
 Responsibilities:
   - Open CHAIN spans through the standard OpenTelemetry API, so code

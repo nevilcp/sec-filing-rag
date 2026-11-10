@@ -1,18 +1,12 @@
-"""
-core/llm_factory.py
-
-Centralized LLM factory functions with cached instances and retry policy.
+"""Centralized LLM factories with cached instances and a retry policy.
 
 Responsibilities:
-  - Initialize and cache LangChain Chat Models per pipeline node role
-  - Inject rate-limiting barriers before executing model invocations
-  - Execute API calls with exponential backoff for transient 429 errors
+  - Build and cache one LangChain chat model per pipeline node role.
+  - Acquire a rate-limit budget before every model invocation.
+  - Retry transient per-minute 429 errors with exponential backoff.
 
 Dependencies:
-  - langchain_core
-  - langchain_groq
-  - langchain_google_genai
-  - tenacity
+  - GROQ_API_KEY and GEMINI_API_KEY, read when a client is first built.
 """
 
 from __future__ import annotations
@@ -51,7 +45,7 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     """Return True only for transient per-minute rate-limit errors.
 
     Deliberately excludes daily quota exhaustion (TPD/RPD) because the
-    recovery window is hours — far too long for tenacity to wait inline.
+    recovery window is hours, far too long for tenacity to wait inline.
 
     Args:
         exc: The exception raised by the LLM API call.
@@ -68,7 +62,7 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
 
 
 def _require_groq_api_key() -> str:
-    """Read and validate the GROQ_API_KEY environment variable.
+    """Read the GROQ_API_KEY environment variable.
 
     Returns:
         The non-empty API key string.
@@ -85,7 +79,7 @@ def _require_groq_api_key() -> str:
 
 
 def _require_gemini_api_key() -> str:
-    """Read and validate the GEMINI_API_KEY environment variable.
+    """Read the GEMINI_API_KEY environment variable.
 
     Returns:
         The non-empty API key string.
@@ -111,16 +105,16 @@ def _build_groq_llm(
     reasoning_effort: str | None = None,
     reasoning_format: str | None = None,
 ) -> ChatGroq:
-    """Construct a ChatGroq instance with project-standard retry settings.
+    """Build a ChatGroq client with the project retry settings.
 
     Args:
         api_key: Groq API key.
         model_name: Groq model identifier string.
         temperature: Sampling temperature for the model.
-        reasoning_effort: Optional Groq reasoning effort level
-            (e.g., 'none' to disable chain-of-thought).
-        reasoning_format: Optional output format for reasoning
-            (e.g., 'hidden' to suppress scratchpad in output).
+        reasoning_effort: Optional Groq reasoning effort level, for
+            example 'low'.
+        reasoning_format: Optional reasoning output format, for
+            example 'hidden' to suppress the scratchpad.
 
     Returns:
         A configured ChatGroq instance.
@@ -143,7 +137,7 @@ def _build_gemini_llm(
     model_name: str,
     temperature: float,
 ) -> ChatGoogleGenerativeAI:
-    """Construct a ChatGoogleGenerativeAI instance with standard retry settings.
+    """Build a ChatGoogleGenerativeAI client with the retry settings.
 
     Args:
         api_key: Google Gemini API key.
@@ -164,9 +158,9 @@ def _build_gemini_llm(
 def _extract_content_str(content: object) -> str:
     """Normalize LangChain response content to a plain string.
 
-    Handles both simple string responses and multi-block list
-    responses (produced by some vision/multimodal models). Falls back
-    to str() coercion so unexpected types never crash the pipeline.
+    Handles plain strings and multi-block lists, which some multimodal
+    models return. Other types fall back to str() so an unexpected
+    shape never crashes the pipeline.
 
     Args:
         content: The raw content field from a LangChain response.
@@ -191,11 +185,10 @@ def _extract_content_str(content: object) -> str:
 
 
 def _do_invoke_with_retry(llm: BaseChatModel, prompt: str) -> Any:
-    """Invoke an LLM with exponential-backoff retry on rate-limit errors.
+    """Invoke an LLM, retrying rate-limit errors with backoff.
 
-    Uses tenacity's Retrying context manager so each attempt can be
-    instrumented independently. Only retries on transient per-minute
-    throttle errors; daily quota exhaustion propagates immediately.
+    Only transient per-minute throttle errors are retried. Daily quota
+    exhaustion propagates immediately.
 
     Args:
         llm: The LangChain chat model to invoke.
@@ -205,8 +198,8 @@ def _do_invoke_with_retry(llm: BaseChatModel, prompt: str) -> Any:
         The raw LangChain response object.
 
     Raises:
-        Exception: Re-raises the last exception after all retries
-            are exhausted.
+        Exception: The last error from the model call, once retries are
+            exhausted or if the error is not a per-minute throttle.
     """
     for attempt in Retrying(
         reraise=True,
@@ -229,9 +222,8 @@ def invoke_with_rate_limit(
 ) -> str:
     """Invoke an LLM through the sliding-window rate limiter.
 
-    Acquires a token budget from the limiter before making the API call,
-    then adjusts the limiter's sliding window with actual token usage
-    reported by the API to keep the estimate accurate over time.
+    Acquires a token budget from the limiter before the API call, then
+    replaces the estimate with the actual token usage the API reports.
 
     Args:
         llm: The LangChain chat model to invoke.
@@ -240,6 +232,17 @@ def invoke_with_rate_limit(
 
     Returns:
         The response content as a plain string.
+
+    Raises:
+        RateLimitExhausted: If the prompt's token estimate alone exceeds
+            the limiter's per-minute token limit.
+        Exception: The last error from the model call after retries (see
+            _do_invoke_with_retry).
+
+    Example:
+        >>> llm = get_router_llm()
+        >>> limiter = get_router_limiter()
+        >>> text = invoke_with_rate_limit(llm, "Classify.", limiter)
     """
     tokens = estimate_llm_tokens(prompt)
     limiter.acquire(tokens)
@@ -257,13 +260,15 @@ def invoke_with_rate_limit(
 
 @locked_singleton
 def get_input_guard_llm() -> ChatGroq:
-    """Return the singleton PromptGuard-2-86M injection/jailbreak classifier.
+    """Return the singleton PromptGuard-2-86M injection classifier.
 
-    Initializes the model lazily on first call. Temperature is forced to
-    0.0 for fully deterministic classification output.
+    Temperature is forced to 0.0 for deterministic classification.
 
     Returns:
         The cached ChatGroq instance for the InputGuard node.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     return _build_groq_llm(
         _require_groq_api_key(),
@@ -274,12 +279,15 @@ def get_input_guard_llm() -> ChatGroq:
 
 @locked_singleton
 def get_output_guard_llm() -> ChatGroq:
-    """Return the singleton GPT-OSS-Safeguard-20B output policy classifier.
+    """Return the singleton GPT-OSS-Safeguard-20B policy classifier.
 
     Temperature is forced to 0.0 for deterministic policy decisions.
 
     Returns:
         The cached ChatGroq instance for the OutputGuard node.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     return _build_groq_llm(
         _require_groq_api_key(),
@@ -298,6 +306,9 @@ def get_router_llm() -> ChatGroq:
 
     Returns:
         The cached ChatGroq instance for the Router node.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     return _build_groq_llm(
         _require_groq_api_key(),
@@ -314,6 +325,9 @@ def get_grader_llm() -> ChatGroq:
 
     Returns:
         The cached ChatGroq instance for the Grader node.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     return _build_groq_llm(
         _require_groq_api_key(),
@@ -328,6 +342,9 @@ def get_rewriter_llm() -> ChatGroq:
 
     Returns:
         The cached ChatGroq instance for the Rewriter node.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     return _build_groq_llm(
         _require_groq_api_key(),
@@ -338,10 +355,13 @@ def get_rewriter_llm() -> ChatGroq:
 
 @locked_singleton
 def get_generation_llm() -> BaseChatModel:
-    """Return the singleton Gemini generation LLM for final answer synthesis.
+    """Return the singleton Gemini LLM that writes the final answer.
 
     Returns:
         The cached BaseChatModel instance for the Generation node.
+
+    Raises:
+        RuntimeError: If GEMINI_API_KEY is not set.
     """
     return _build_gemini_llm(
         _require_gemini_api_key(),

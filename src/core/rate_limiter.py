@@ -1,15 +1,15 @@
-"""
-core/rate_limiter.py
-
-Per-model sliding-window rate limiter for Groq LPU inference.
+"""Per-model sliding-window rate limiter for LLM endpoints.
 
 Responsibilities:
-  - Enforce RPM, TPM, RPD, and TPD limits across different model instances
-  - Ensure thread-safe rate limit acquisition prior to LLM invocation
-  - Persist daily rate limit counters to disk for bounded-budget models
+  - Enforce per-minute request and token limits for each model, with a
+    minimum gap between requests.
+  - Make acquisition thread-safe, ahead of every LLM call.
+  - Hold the per-model limit table and one shared limiter per model.
 
-Dependencies:
-  - None
+Not responsible for:
+  - Daily limits. RPD and TPD values are listed in the table but not
+    enforced, and nothing is persisted to disk.
+  - Retrying failed calls (see core/llm_factory.py).
 """
 
 from __future__ import annotations
@@ -22,35 +22,40 @@ from src.core import config
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
+# Rough characters per token for English prose with Llama and GPT
+# tokenizers.
 _CHARS_PER_TOKEN: int = 4
 
+# Scales the prompt estimate to also cover completion tokens.
 _LLM_TOKEN_MULTIPLIER: float = 1.5
 
 
 def estimate_llm_tokens(prompt: str) -> int:
-    """Estimate the total token cost of an LLM call from the prompt length.
+    """Estimate the total token cost of an LLM call from the prompt.
 
-    Uses a conservative 4-chars-per-token heuristic (matching Llama/GPT
-    density for English prose), then multiplies by 1.5x to account for
-    completion tokens without requiring a post-call correction step.
+    Uses a 4-characters-per-token heuristic, then multiplies by 1.5 to
+    allow for completion tokens. The estimate is corrected after the
+    call by adjust_tokens() when the provider reports real usage.
 
     Args:
         prompt: The input prompt string.
 
     Returns:
-        An integer token estimate that slightly over-counts to avoid
-        exceeding per-minute limits.
+        A token estimate that errs on the high side, to stay under
+        per-minute limits.
     """
     input_tokens = max(1, len(prompt) // _CHARS_PER_TOKEN)
     return int(input_tokens * _LLM_TOKEN_MULTIPLIER)
 
 
 class RateLimitExhausted(Exception):
-    """Raised when a rate limiter cannot acquire within the allowed budget."""
+    """Raised when a request can never fit within the allowed budget."""
 
     pass
 
 
+# Per model: (rpm, rpd, tpm, tpd), the provider limits for requests and
+# tokens per minute and per day.
 _MODEL_LIMITS: dict[str, tuple[int, int, int, int]] = {
     "meta-llama/llama-prompt-guard-2-86m": (30, 14_400, 15_000, 500_000),
     "openai/gpt-oss-safeguard-20b": (30, 1_000, 8_000, 200_000),
@@ -62,21 +67,39 @@ _MODEL_LIMITS: dict[str, tuple[int, int, int, int]] = {
 
 
 def get_model_limits(model_id: str) -> tuple[int, int, int, int]:
+    """Return the provider rate limits for a model.
+
+    Args:
+        model_id: The model identifier, such as 'openai/gpt-oss-20b'.
+
+    Returns:
+        A tuple of (rpm, rpd, tpm, tpd): requests per minute, requests
+        per day, tokens per minute and tokens per day.
+
+    Raises:
+        ValueError: If the model has no entry in the limit table.
+    """
     if model_id not in _MODEL_LIMITS:
         raise ValueError(f"No rate-limit specification for model '{model_id}'. Known models: {sorted(_MODEL_LIMITS)}")
     return _MODEL_LIMITS[model_id]
 
 
 class _SlidingWindowRateLimiter:
-    """Thread-safe sliding-window rate limiter for Groq LPU model endpoints.
+    """Thread-safe sliding-window rate limiter for one model endpoint.
 
-    Enforces per-minute RPM and TPM constraints by maintaining a deque
-    of (timestamp, token_count) entries for the most recent 60-second
-    window. Also enforces a minimum inter-request cooldown derived from
-    the RPM limit to smooth burst traffic across the window.
+    Enforces per-minute RPM and TPM limits with a deque of
+    (timestamp, token_count) entries for the last 60 seconds. It also
+    enforces a minimum gap between requests, derived from the RPM
+    limit, to smooth bursts across the window.
+
+    Args:
+        rpm: Maximum requests per minute allowed by the provider.
+        tpm: Maximum tokens per minute allowed by the provider.
+        model_label: Human-readable model name for log messages.
     """
 
     _WINDOW_SECONDS: float = 60.0
+    # Seconds to sleep between checks while waiting for capacity.
     _POLL_INTERVAL: float = 1.0
 
     def __init__(
@@ -85,13 +108,6 @@ class _SlidingWindowRateLimiter:
         tpm: int,
         model_label: str,
     ) -> None:
-        """Initialize the rate limiter for a specific model.
-
-        Args:
-            rpm: Maximum requests per minute allowed by the provider.
-            tpm: Maximum tokens per minute allowed by the provider.
-            model_label: Human-readable model name for log messages.
-        """
         self._rpm = rpm
         self._tpm = tpm
         self._label = model_label
@@ -103,15 +119,17 @@ class _SlidingWindowRateLimiter:
         self._lock = threading.Lock()
 
     def _purge_expired(self, now: float) -> None:
-        """Remove entries older than the 60 s sliding window"""
+        """Remove entries older than the sliding window."""
         cutoff = now - self._WINDOW_SECONDS
         while self._request_log and self._request_log[0][0] < cutoff:
             self._request_log.popleft()
 
     def _current_rpm(self) -> int:
+        """Return the request count inside the window."""
         return len(self._request_log)
 
     def _current_tpm(self) -> int:
+        """Return the token total inside the window."""
         return sum(tokens for _, tokens in self._request_log)
 
     def acquire(self, estimated_tokens: int) -> None:
@@ -143,7 +161,7 @@ class _SlidingWindowRateLimiter:
                     self._last_request_time = now
                     if waited:
                         logger.info(
-                            "[%s] Resumed — RPM %d/%d  TPM %d/%d",
+                            "[%s] Resumed - RPM %d/%d  TPM %d/%d",
                             self._label,
                             self._current_rpm(),
                             self._rpm,
@@ -164,13 +182,13 @@ class _SlidingWindowRateLimiter:
 
                     if not rpm_ok or not tpm_ok:
                         logger.warning(
-                            "[%s] Throttling — %s. Waiting...",
+                            "[%s] Throttling - %s. Waiting...",
                             self._label,
                             ", ".join(reasons),
                         )
                     else:
                         logger.debug(
-                            "[%s] Pacing request — %s. Waiting...",
+                            "[%s] Pacing request - %s. Waiting...",
                             self._label,
                             ", ".join(reasons),
                         )
@@ -179,7 +197,14 @@ class _SlidingWindowRateLimiter:
             time.sleep(self._POLL_INTERVAL)
 
     def stats(self) -> dict[str, int]:
-        """Return a snapshot of current usage across all dimensions"""
+        """Return a snapshot of current usage.
+
+        The daily (rpd, tpd) entries are always 0 because daily limits
+        are not tracked.
+
+        Returns:
+            A dict of used and limit values for rpm, tpm, rpd and tpd.
+        """
         with self._lock:
             self._purge_expired(time.monotonic())
             return {
@@ -194,7 +219,13 @@ class _SlidingWindowRateLimiter:
             }
 
     def adjust_tokens(self, estimated: int, actual: int) -> None:
-        """Adjust the sliding window's latest entry with exact usage"""
+        """Replace the latest entry's token count with real usage.
+
+        Args:
+            estimated: The estimate passed to acquire. Unused, since the
+                latest entry is overwritten.
+            actual: The total tokens the provider reported for the call.
+        """
         with self._lock:
             if self._request_log:
                 timestamp, _ = self._request_log[-1]
@@ -208,7 +239,7 @@ _LIMITER_LOCK = threading.Lock()
 def _get_or_create_limiter(
     model_id: str,
 ) -> _SlidingWindowRateLimiter:
-    """Return the singleton limiter for a given model ID"""
+    """Return the shared limiter for a model, creating it if needed."""
     if model_id not in _LIMITER_CACHE:
         with _LIMITER_LOCK:
             if model_id not in _LIMITER_CACHE:
@@ -229,12 +260,12 @@ def _get_or_create_limiter(
 
 
 def get_input_guard_limiter() -> _SlidingWindowRateLimiter:
-    """Limiter for llama-prompt-guard-2-86m (RPM 30, RPD 14,400)"""
+    """Return the limiter for the input guard model."""
     return _get_or_create_limiter(config.INPUT_GUARD_MODEL)
 
 
 def get_output_guard_limiter() -> _SlidingWindowRateLimiter:
-    """Limiter for gpt-oss-safeguard-20b (RPM 30, RPD 1,000)"""
+    """Return the limiter for the output guard model."""
     return _get_or_create_limiter(config.OUTPUT_GUARD_MODEL)
 
 
@@ -253,10 +284,13 @@ def get_workhorse_limiter() -> _SlidingWindowRateLimiter:
 
 
 def get_generation_limiter() -> _SlidingWindowRateLimiter:
-    """Limiter for gemini-3.5-flash (RPM 15, RPD 1,500)"""
+    """Return the limiter for the generation model."""
     return _get_or_create_limiter(config.GENERATION_MODEL)
 
 
 def get_embedding_rate_limiter() -> _SlidingWindowRateLimiter:
-    """Alias for backward compatibility with the /metrics endpoint"""
+    """Return the limiter whose usage the /metrics endpoint reports.
+
+    This is the workhorse limiter.
+    """
     return get_workhorse_limiter()

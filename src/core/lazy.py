@@ -1,5 +1,4 @@
-"""
-Thread-safe lazy singletons.
+"""Thread-safe lazy singletons.
 
 Responsibilities:
   - Provide a decorator that builds a value once and shares it
@@ -24,7 +23,7 @@ def locked_singleton(factory: Callable[[], T]) -> Callable[[], T]:
     retries. The wrapper gains a cache_clear() method for tests.
 
     Args:
-        factory: A function that takes no arguments and builds the value.
+        factory: A function with no arguments that builds the value.
 
     Returns:
         A function with the same name that returns the shared value.

@@ -1,14 +1,10 @@
-"""
-rag/cache.py
-
-Semantic caching layer using Qdrant.
+"""Semantic caching layer using Qdrant.
 
 Responsibilities:
-  - Store and retrieve LLM generation responses based on query semantic similarity
-  - Manage the initialization of the cache collection
-
-Dependencies:
-  - qdrant_client
+  - Store generated answers keyed by the embedding of the query.
+  - Return a stored answer for a sufficiently similar query.
+  - Create the cache collection, recreating it if its vector size is
+    stale.
 """
 
 from __future__ import annotations
@@ -27,15 +23,19 @@ logger = get_logger(__name__)
 
 
 class SemanticCache:
-    """Qdrant-backed semantic cache for generation responses"""
+    """Qdrant-backed semantic cache for generation responses.
+
+    Creating an instance creates the cache collection if it is missing.
+    A collection with a stale vector size, for example after an
+    embedding model change, is deleted and recreated, which discards
+    every cached response.
+
+    Attributes:
+        client: The shared local Qdrant client.
+        collection_name: The Qdrant collection that holds the cache.
+    """
 
     def __init__(self) -> None:
-        """Initialize the semantic cache collection in Qdrant.
-
-        If the collection already exists but has a mismatched vector size
-        (e.g. after switching embedding models), the old collection is
-        deleted and recreated, discarding all cached responses.
-        """
         self.client = get_qdrant_client()
         self.collection_name = config.QDRANT_CACHE_COLLECTION
         ensure_collection(
@@ -45,14 +45,15 @@ class SemanticCache:
         )
 
     def lookup(self, query_text: str) -> str | None:
-        """Check if a semantically similar query exists in the cache.
+        """Return the cached answer for a semantically similar query.
 
         Args:
             query_text: The user's raw query string.
 
         Returns:
-            The cached response text if the cosine similarity is >= the configured
-            threshold, otherwise None
+            The cached response text if the best match has a cosine
+            similarity of at least config.CACHE_SIMILARITY_THRESHOLD,
+            otherwise None.
         """
         query_embedding = embed_query(query_text)
 
@@ -76,11 +77,10 @@ class SemanticCache:
         return None
 
     def store(self, query_text: str, response_text: str) -> None:
-        """Store a query-response pair in the semantic cache.
+        """Store a query and response pair in the cache.
 
-        Uses UUID5 on the raw query string to derive a deterministic point
-        ID, so repeated stores for the same query overwrite rather than
-        duplicate the cached entry.
+        The point ID is a UUID5 of the raw query, so storing the same
+        query again overwrites its entry instead of adding a duplicate.
 
         Args:
             query_text: The original user query string.

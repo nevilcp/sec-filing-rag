@@ -1,20 +1,13 @@
-"""
-core/constants.py
-
-Static lookup tables for the SEC compliance RAG system.
+"""Static lookup tables for the SEC compliance RAG system.
 
 Responsibilities:
-  - Define the set of recognizable ticker symbols for query-directed
-    retrieval (KNOWN_TICKERS).
-  - Define the set of recognizable SEC/CFR regulation names for directed
-    retrieval (KNOWN_REGULATIONS).
+  - Define the ticker symbols in the corpus (KNOWN_TICKERS).
+  - Define the SEC/CFR regulation names the retriever recognizes in a
+    query (KNOWN_REGULATIONS).
 
 Not responsible for:
   - CIK resolution (see core/corpus.py).
   - Retrieval filtering logic (see rag/retriever.py).
-
-Dependencies:
-  - None
 """
 
 KNOWN_REGULATIONS = [
@@ -32,6 +25,8 @@ KNOWN_REGULATIONS = [
 ]
 
 
+# Tickers to ingest. Read by core/corpus.py to build the corpus and by
+# rag/retriever.py to detect a company named in a query.
 KNOWN_TICKERS = [
     "AAPL",
     "MSFT",

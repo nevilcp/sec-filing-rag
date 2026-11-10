@@ -1,16 +1,11 @@
-"""
-rag/vector_store.py
-
-Qdrant collection setup and dense retrieval.
+"""Qdrant collection setup and dense retrieval.
 
 Responsibilities:
-  - Maintain Qdrant local client lifecycle and configuration
-  - Ensure collection schemas align with embedded vector dimensions
-  - Execute dense vector similarity searches with optional payload filtering
-  - Upsert document chunks efficiently
-
-Dependencies:
-  - qdrant_client
+  - Own the shared local Qdrant client.
+  - Create collections and keep their vector size in line with the
+    embedding model.
+  - Run dense similarity search with an optional ticker filter.
+  - Upsert document chunks idempotently.
 """
 
 from __future__ import annotations
@@ -31,19 +26,16 @@ logger = get_logger(__name__)
 
 @locked_singleton
 def get_qdrant_client() -> QdrantClient:
-    """Return the singleton local Qdrant client, creating it on first call.
-
-    Repeated calls within the same process reuse the same connection to
-    the local file-based store.
+    """Return the shared local Qdrant client, creating it on first call.
 
     Returns:
-        The initialized QdrantClient instance.
+        The QdrantClient for the file-based store at config.QDRANT_PATH.
     """
     return QdrantClient(path=config.QDRANT_PATH)
 
 
 def ensure_collection(client: QdrantClient, name: str, mismatch_note: str) -> None:
-    """Create a cosine collection, or recreate it if its vector size is stale.
+    """Create a cosine collection, or recreate it if its size is stale.
 
     Args:
         client: The Qdrant client to operate on.
@@ -80,10 +72,9 @@ def ensure_collection(client: QdrantClient, name: str, mismatch_note: str) -> No
 def get_filings_collection() -> None:
     """Ensure the primary filings collection exists in Qdrant.
 
-    Idempotent: skips collection checks after the first successful
-    verification within the process lifetime. If the existing collection
-    has a mismatched vector size (e.g. after a model change), it is
-    deleted and recreated, discarding all indexed documents.
+    Runs the check once per process. A collection with a stale vector
+    size, for example after a model change, is deleted and recreated,
+    which discards every indexed document.
 
     Raises:
         qdrant_client.http.exceptions.UnexpectedResponse: On unexpected
@@ -101,15 +92,19 @@ def dense_search(
     top_k: int,
     filter_ticker: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Runs dense vector search in Qdrant and returns normalized result dicts.
+    """Run dense vector search in Qdrant and return normalized results.
 
     Args:
         query_text: The user's query.
         top_k: Maximum number of results to return.
-        filter_ticker: Optional metadata filter for ticker.
+        filter_ticker: Optional ticker to restrict the search to.
 
     Returns:
-        A list of search results containing text, score, and metadata
+        Result dicts with 'text', 'score' and 'metadata' keys.
+
+    Raises:
+        qdrant_client.http.exceptions.UnexpectedResponse: On unexpected
+            Qdrant API errors.
     """
     client = get_qdrant_client()
     get_filings_collection()
@@ -149,16 +144,19 @@ def dense_search(
 
 
 def upsert_chunks(chunks: list[dict[str, Any]]) -> None:
-    """Upsert a batch of embedded document chunks into the Qdrant collection.
+    """Upsert embedded document chunks into the filings collection.
 
-    Uses UUID5 (deterministic, namespace-DNS) to derive point IDs from
-    the chunk's composite 'id' field, making upserts idempotent: re-running
-    ingestion for the same accession number overwrites existing points
-    rather than creating duplicates.
+    Point IDs are UUID5 values derived from each chunk's composite 'id',
+    so re-running ingestion for the same filing overwrites its points
+    instead of creating duplicates.
 
     Args:
-        chunks: A list of chunk dicts, each containing 'id', 'text',
-            'metadata', and 'embedding' keys.
+        chunks: Chunk dicts, each with 'id', 'text', 'metadata' and
+            'embedding' keys.
+
+    Raises:
+        qdrant_client.http.exceptions.UnexpectedResponse: On unexpected
+            Qdrant API errors.
     """
     client = get_qdrant_client()
     get_filings_collection()
