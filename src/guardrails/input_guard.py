@@ -15,7 +15,6 @@ Dependencies:
 
 from __future__ import annotations
 
-from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 from presidio_analyzer import AnalyzerEngine
 
@@ -25,9 +24,9 @@ from src.core.llm_factory import (
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
+from src.core.tracing import chain_span, set_span_output
 
 logger = get_logger(__name__)
-tracer = trace.get_tracer(__name__)
 
 _ANALYZER: AnalyzerEngine | None = None
 _PII_ENTITIES = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN"]
@@ -92,27 +91,23 @@ def validate_input(query: str) -> tuple[bool, str]:
         A tuple of (is_valid, rejection_reason). is_valid is True if the query
         passes all checks
     """
-    with tracer.start_as_current_span(
-        "validate_input",
-        openinference_span_kind="chain",
-    ) as span:
-        span.set_input(query)
+    with chain_span("validate_input", query) as span:
         detected = _detect_pii_entities(query)
         if detected:
             reason = f"PII detected: {detected}"
             logger.warning("Input blocked due to PII", extra={"extra": {"entities": detected}})
-            span.set_output(reason)
+            set_span_output(span, reason)
             span.set_status(Status(StatusCode.OK))
             return (False, reason)
 
         if _is_prompt_injection(query):
             reason = "Prompt injection detected"
             logger.warning("Input blocked due to prompt injection")
-            span.set_output(reason)
+            set_span_output(span, reason)
             span.set_status(Status(StatusCode.OK))
             return (False, reason)
 
         logger.info("Input validation passed")
-        span.set_output("valid")
+        set_span_output(span, "valid")
         span.set_status(Status(StatusCode.OK))
         return (True, "")

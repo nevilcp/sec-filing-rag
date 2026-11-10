@@ -16,7 +16,6 @@ Dependencies:
 
 from __future__ import annotations
 
-from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
@@ -28,9 +27,9 @@ from src.core.llm_factory import (
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
+from src.core.tracing import chain_span, set_span_output
 
 logger = get_logger(__name__)
-tracer = trace.get_tracer(__name__)
 
 _ANALYZER: AnalyzerEngine | None = None
 _ANONYMIZER: AnonymizerEngine | None = None
@@ -136,16 +135,12 @@ def validate_output(response: str) -> tuple[str, list[str]]:
         A tuple of (sanitized_response, warnings_list). The response will have
         PII redacted if detected
     """
-    with tracer.start_as_current_span(
-        "validate_output",
-        openinference_span_kind="chain",
-    ) as span:
-        span.set_input(response)
+    with chain_span("validate_output", response) as span:
         warnings: list[str] = []
 
         if not response or not response.strip():
             logger.info("Output validation complete (empty response)")
-            span.set_output("")
+            set_span_output(span, "")
             span.set_status(Status(StatusCode.OK))
             return response, warnings
 
@@ -164,6 +159,6 @@ def validate_output(response: str) -> tuple[str, list[str]]:
             logger.warning("Output flagged for definitive legal advice tone")
 
         logger.info("Output validation complete", extra={"extra": {"warnings_count": len(warnings)}})
-        span.set_output(sanitized)
+        set_span_output(span, sanitized)
         span.set_status(Status(StatusCode.OK))
         return sanitized, warnings

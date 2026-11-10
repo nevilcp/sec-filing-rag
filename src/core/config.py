@@ -53,6 +53,10 @@ ROUTER_MODEL = "openai/gpt-oss-20b"
 GRADER_MODEL = "openai/gpt-oss-120b"
 REWRITER_MODEL = "openai/gpt-oss-120b"
 GENERATION_MODEL = "gemini-3.5-flash"
+# Judge model for the Phoenix evals, reached through the Groq
+# OpenAI-compatible endpoint because litellm is not installed.
+EVAL_MODEL = "openai/gpt-oss-120b"
+EVAL_BASE_URL = "https://api.groq.com/openai/v1"
 
 
 GENERATION_LLM_TEMPERATURE = 0.1
@@ -112,3 +116,5 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 
 PHOENIX_HOST = os.getenv("PHOENIX_HOST", "localhost")
 PHOENIX_PORT = int(os.getenv("PHOENIX_PORT", "6006"))
+# Project that run.py registers traces under; the evals read it back.
+PHOENIX_PROJECT_NAME = "sec-filing-rag"

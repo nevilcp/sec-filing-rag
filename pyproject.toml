@@ -31,6 +31,8 @@ dependencies = [
   "langchain-groq>=1.1.2",
   "python-dotenv>=1.2.2",
   "opentelemetry-api>=1.42.0",
+  "opentelemetry-sdk>=1.42.0",
+  "openinference-semantic-conventions>=0.1.43",
   "pytest>=9.0.3",
   "ruff>=0.4.0",
 ]

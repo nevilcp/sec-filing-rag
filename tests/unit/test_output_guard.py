@@ -11,8 +11,6 @@ Responsibilities:
 
 from unittest import mock
 
-import pytest
-
 from src.guardrails.output_guard import (
     _anonymize_pii,
     _is_definitive_legal_advice,
@@ -45,10 +43,6 @@ def test_is_definitive_legal_advice_compliant(mock_invoke):
     assert not _is_definitive_legal_advice("Companies usually file Form 8-K.")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.output_guard._is_definitive_legal_advice")
 @mock.patch("src.guardrails.output_guard._anonymize_pii")
 def test_validate_output_clean(mock_anonymize, mock_is_legal_advice):
@@ -60,10 +54,6 @@ def test_validate_output_clean(mock_anonymize, mock_is_legal_advice):
     assert not warnings
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.output_guard._is_definitive_legal_advice")
 @mock.patch("src.guardrails.output_guard._anonymize_pii")
 def test_validate_output_with_warnings(mock_anonymize, mock_is_legal_advice):
