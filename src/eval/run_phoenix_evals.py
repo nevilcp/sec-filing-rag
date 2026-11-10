@@ -1,7 +1,7 @@
 """
 eval/run_phoenix_evals.py
 
-Arize Phoenix evaluation runner using Groq LLaMA-3 70B as the judge.
+Arize Phoenix evaluation runner using a Groq-hosted judge model.
 
 Responsibilities:
   - Connect to the local Phoenix server and fetch recorded traces.
@@ -18,12 +18,14 @@ Dependencies:
 """
 
 import asyncio
+import os
 
 from phoenix.client import Client
 from phoenix.evals import LLM, ClassificationEvaluator, async_evaluate_dataframe
 from phoenix.evals.utils import to_annotation_dataframe
 from phoenix.trace import suppress_tracing
 
+from src.core import config
 from src.eval.prompts import (
     ANSWER_RELEVANCE_TEMPLATE,
 )
@@ -33,22 +35,23 @@ async def main_async() -> None:
     """Fetch traces from Phoenix and run LLM-as-a-judge evaluations.
 
     Connects to the local Phoenix instance, retrieves all CHAIN spans from
-    the 'default' project, runs an answer-relevance classification pass using
-    Groq's llama3-70b-8192, and logs the scored annotations back to Phoenix.
+    the Phoenix project, runs an answer-relevance classification pass using
+    config.EVAL_MODEL, and logs the scored annotations back to Phoenix.
 
     Concurrency is limited to 2 to respect Groq free-tier rate limits.
     Context relevance and faithfulness evaluations are omitted here because
     they require attributes.retrieval.documents to be populated on the CHAIN
     span, which depends on the instrumentation configuration.
     """
-    print("Connecting to Phoenix Client on port 8001...")
-    px_client = Client(base_url="http://localhost:8001")
+    base_url = f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}"
+    print(f"Connecting to Phoenix Client at {base_url}...")
+    px_client = Client(base_url=base_url)
 
     print("Fetching traces...")
-    df = px_client.spans.get_spans_dataframe(project_name="default")
+    df = px_client.spans.get_spans_dataframe(project_name=config.PHOENIX_PROJECT_NAME)
 
     if df.empty:
-        print("No traces found in the 'default' project. Run the app and generate traces first.")
+        print(f"No traces found in the '{config.PHOENIX_PROJECT_NAME}' project. Run the app and generate traces first.")
         return
 
     parent_spans = df[df["span_kind"] == "CHAIN"]
@@ -57,7 +60,12 @@ async def main_async() -> None:
         return
 
     print("Initializing Groq LLM Evaluator...")
-    llm = LLM(model="groq/llama3-70b-8192")
+    llm = LLM(
+        provider="openai",
+        model=config.EVAL_MODEL,
+        base_url=config.EVAL_BASE_URL,
+        api_key=os.environ["GROQ_API_KEY"],
+    )
 
     print("Setting up Evaluator for Answer Relevance...")
     relevance_evaluator = ClassificationEvaluator(

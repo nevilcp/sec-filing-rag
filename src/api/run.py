@@ -42,7 +42,7 @@ def main() -> None:
             "PHOENIX_COLLECTOR_ENDPOINT",
             f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}",
         )
-        register(project_name="sec-filing-rag", protocol="http/protobuf", verbose=False)
+        register(project_name=config.PHOENIX_PROJECT_NAME, protocol="http/protobuf", verbose=False)
         LangChainInstrumentor().instrument()
 
     uvicorn.run(

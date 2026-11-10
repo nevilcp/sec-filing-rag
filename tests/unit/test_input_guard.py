@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from unittest import mock
 
-import pytest
-
 from src.guardrails.input_guard import _detect_pii_entities, _is_prompt_injection, validate_input
 
 
@@ -48,10 +46,6 @@ def test_is_prompt_injection_safe(mock_invoke):
     assert _is_prompt_injection("What are Apple's risk factors?") is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.input_guard._is_prompt_injection")
 def test_validate_input_passes_clean_query(mock_injection):
     mock_injection.return_value = False
@@ -60,10 +54,6 @@ def test_validate_input_passes_clean_query(mock_injection):
     assert reason == ""
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.input_guard._is_prompt_injection")
 def test_validate_input_blocks_pii(mock_injection):
     mock_injection.return_value = False
@@ -72,10 +62,6 @@ def test_validate_input_blocks_pii(mock_injection):
     assert "PII" in reason
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.input_guard._is_prompt_injection")
 def test_validate_input_blocks_injection(mock_injection):
     mock_injection.return_value = True
@@ -84,10 +70,6 @@ def test_validate_input_blocks_injection(mock_injection):
     assert "injection" in reason.lower()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: tracer lacks Phoenix-only span API when Phoenix is disabled - fixed in PR 3",
-)
 @mock.patch("src.guardrails.input_guard._is_prompt_injection")
 def test_validate_input_pii_checked_before_injection(mock_injection):
     """PII check runs first — if PII is found, injection check is never called"""

@@ -21,19 +21,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from src.api.schemas import QueryRequest, QueryResponse, SourceCitation
 from src.core import config
 from src.core.logging import get_audit_logger, get_logger, get_rag_logger
 from src.core.rate_limiter import get_embedding_rate_limiter
+from src.core.tracing import chain_span, set_span_output
 from src.guardrails.input_guard import validate_input
 from src.guardrails.output_guard import validate_output
 from src.rag.ingest import run_ingestion
 from src.rag.vector_store import get_qdrant_client
-
-tracer = trace.get_tracer(__name__)
 
 logger = get_logger(__name__)
 _rag_log = get_rag_logger()
@@ -67,11 +65,7 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
     Returns:
         The generated response with retrieved citations and safety warnings
     """
-    with tracer.start_as_current_span(
-        "query_endpoint",
-        openinference_span_kind="chain",
-    ) as span:
-        span.set_input(payload.query)
+    with chain_span("query_endpoint", payload.query) as span:
         is_valid, reason = validate_input(payload.query)
         _audit_log.info(
             "input_guard_decision",
@@ -84,7 +78,7 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
             },
         )
         if not is_valid:
-            span.set_output(reason)
+            set_span_output(span, reason)
             span.set_status(Status(StatusCode.ERROR, reason))
             raise HTTPException(status_code=400, detail=reason)
 
@@ -162,7 +156,7 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
             warnings=warnings,
             sources=sources_list,
         )
-        span.set_output(sanitized_response)
+        set_span_output(span, sanitized_response)
         span.set_status(Status(StatusCode.OK))
         return response
 
