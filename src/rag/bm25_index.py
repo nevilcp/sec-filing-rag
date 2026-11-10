@@ -1,15 +1,9 @@
-"""
-rag/bm25_index.py
-
-BM25 sparse index build/load/search utilities.
+"""BM25 sparse index build, load and search utilities.
 
 Responsibilities:
-  - Build and persist a local BM25 keyword index from the Qdrant document corpus
-  - Load the BM25 index and its associated metadata into memory
-  - Execute sparse retrieval for exact-match terminology
-
-Dependencies:
-  - bm25s
+  - Build and persist a local BM25 keyword index of the document corpus.
+  - Load the index and its document list into memory.
+  - Run sparse retrieval for exact-match terminology.
 """
 
 from __future__ import annotations
@@ -28,31 +22,35 @@ TOKEN_PATTERN = re.compile(r"\b\w+\b")
 
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase and tokenize text into word-boundary-delimited tokens.
+    """Lowercase text and split it into word tokens.
 
-    Uses a simple word-boundary regex rather than an NLP tokenizer to
-    keep the BM25 index lightweight and deterministic across platforms.
+    Uses a word-boundary regex rather than an NLP tokenizer, which keeps
+    the index light and deterministic across platforms.
 
     Args:
         text: Raw input text to tokenize.
 
     Returns:
-        A list of lowercase word tokens.
+        The lowercase word tokens.
     """
     return TOKEN_PATTERN.findall(text.lower())
 
 
 def build_bm25_index(documents: list[dict[str, Any]]) -> None:
-    """Build and persist a BM25 keyword index from the provided documents.
+    """Build and persist a BM25 keyword index from the documents.
 
-    Tokenizes each document's 'text' field, fits a BM25 model, and saves
-    both the index and the original document list to the configured path.
-    The document list is saved separately so sparse_search can reconstruct
-    full result dicts without re-querying Qdrant.
+    Tokenizes each document's 'text' field, fits a BM25 model and saves
+    the index and the document list to config.BM25_INDEX_PATH. The list
+    is stored beside the index so sparse_search can return full result
+    dicts without querying Qdrant. The in-memory cache is cleared so
+    the next search loads the new index.
 
     Args:
-        documents: A list of document dicts, each containing a 'text'
-            key and a 'metadata' key with filing provenance fields.
+        documents: Document dicts, each with a 'text' key and a
+            'metadata' key holding filing provenance fields.
+
+    Raises:
+        OSError: If the index files cannot be written.
     """
     corpus_tokens = [_tokenize(str(doc.get("text", ""))) for doc in documents]
 
@@ -78,11 +76,12 @@ def load_bm25_index() -> dict[str, Any]:
     """Load the persisted BM25 index and document list from disk.
 
     Returns:
-        A dict with keys 'index' (a bm25s.BM25 instance) and 'documents'
-        (the list of document dicts saved during ingestion).
+        A dict with 'index' (a bm25s.BM25 instance) and 'documents'
+        (the document dicts saved during ingestion).
 
     Raises:
         FileNotFoundError: If the BM25 index path does not exist.
+        json.JSONDecodeError: If the saved document list is invalid.
     """
     path = Path(config.BM25_INDEX_PATH)
     if not path.exists():
@@ -107,14 +106,16 @@ _BM25_LOCK = threading.Lock()
 
 
 def _get_bm25_payload() -> dict[str, Any]:
-    """Return the cached BM25 payload, loading from disk on first call.
+    """Return the cached BM25 payload, loading it from disk if needed.
 
-    The payload is retained for the lifetime of the process to avoid
-    repeated disk I/O on every sparse_search call.
+    The payload is kept until build_bm25_index clears it, which avoids
+    disk reads on every search.
 
     Returns:
-        A dict with 'index' and 'documents' keys as returned by
-        load_bm25_index.
+        The dict returned by load_bm25_index.
+
+    Raises:
+        FileNotFoundError: If the BM25 index has not been built.
     """
     global _BM25_PAYLOAD
     with _BM25_LOCK:
@@ -124,16 +125,19 @@ def _get_bm25_payload() -> dict[str, Any]:
 
 
 def sparse_search(query_text: str, top_k: int) -> list[dict[str, Any]]:
-    """Score all indexed documents with BM25 and return the top-k results.
+    """Score all indexed documents with BM25 and return the top results.
 
     Args:
-        query_text: The user query string to tokenize and score against.
+        query_text: The user query string to tokenize and score.
         top_k: Maximum number of results to return.
 
     Returns:
-        A list of result dicts with 'text', 'score', and 'metadata' keys,
-        sorted by descending BM25 score. Returns an empty list if the
-        query tokenizes to nothing or the index has no documents.
+        Result dicts with 'text', 'score' and 'metadata' keys, sorted
+        by descending BM25 score. The list is empty if the query has no
+        tokens or the index has no documents.
+
+    Raises:
+        FileNotFoundError: If the BM25 index has not been built.
     """
     tokenized_query = _tokenize(query_text)
 

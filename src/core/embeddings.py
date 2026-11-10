@@ -1,19 +1,15 @@
-"""
-core/embeddings.py
-
-Centralized embedding client for the SEC compliance RAG system.
+"""Centralized embedding client for the SEC compliance RAG system.
 
 Responsibilities:
-  - Provide local embedding capabilities for query and document chunks.
-  - Abstract BAAI/bge-m3 model initialization and thread-safe lazy loading.
+  - Provide local embeddings for queries and document chunks.
+  - Load the BAAI/bge-m3 model lazily and share one instance.
 
 Not responsible for:
   - Chunking or text splitting (see rag/ingest.py).
   - Vector storage or retrieval (see rag/vector_store.py).
 
 Dependencies:
-  - FlagEmbedding >= 1.2
-  - BGE_M3_MODEL_NAME and EMBEDDING_BATCH_SIZE must be set in config.
+  - The BGE-M3 weights, downloaded on first use (about 2.3 GB).
 """
 
 from __future__ import annotations
@@ -29,15 +25,8 @@ logger = get_logger(__name__)
 
 @locked_singleton
 def _get_model() -> BGEM3FlagModel:
-    """Return the singleton BGE-M3 model, initializing it on first call.
-
-    Uses a threading lock to prevent duplicate initialization when multiple
-    threads request embeddings simultaneously during application startup.
-
-    Returns:
-        The initialized BGEM3FlagModel instance.
-    """
-    logger.info("Loading BGE-M3 embedding model — first call will download weights (~2.3 GB).")
+    """Return the shared BGE-M3 model, loading it on first call."""
+    logger.info("Loading BGE-M3 embedding model. The first call downloads weights (~2.3 GB).")
     return BGEM3FlagModel(
         config.BGE_M3_MODEL_NAME,
         use_fp16=True,
@@ -46,16 +35,21 @@ def _get_model() -> BGEM3FlagModel:
 
 
 def embed_query(text: str) -> list[float]:
-    """Encode a single query string into a dense embedding vector.
+    """Encode a query string into a dense embedding vector.
 
-    Uses a batch size of 1 and a conservative max_length of 512 tokens,
-    appropriate for short user queries rather than long documents.
+    Uses a batch size of 1 and a max_length of 512 tokens, which suits
+    short user queries.
 
     Args:
         text: The raw query string to embed.
 
     Returns:
-        A list of floats representing the normalized dense embedding vector.
+        The normalized dense embedding vector.
+
+    Example:
+        >>> vector = embed_query("Apple net sales")
+        >>> len(vector) == config.QDRANT_VECTOR_SIZE
+        True
     """
     model = _get_model()
     embeddings = model.encode(
@@ -68,17 +62,22 @@ def embed_query(text: str) -> list[float]:
 
 
 def embed_documents(texts: list[str]) -> list[list[float]]:
-    """Encode a batch of document strings into dense embedding vectors.
+    """Encode document strings into dense embedding vectors.
 
-    Uses an 8192-token max_length to capture full section-length chunks.
-    Batch size is controlled by config.EMBEDDING_BATCH_SIZE to avoid
-    GPU/CPU OOM during large ingestion runs.
+    Uses a max_length of 8192 tokens to cover full section-length
+    chunks. config.EMBEDDING_BATCH_SIZE sets the batch size, which
+    keeps memory bounded during large ingestion runs.
 
     Args:
-        texts: A list of document text strings to embed.
+        texts: The document texts to embed.
 
     Returns:
-        A list of embedding vectors, one per input text, in the same order.
+        One embedding vector per input text, in input order.
+
+    Example:
+        >>> vectors = embed_documents(["chunk one", "chunk two"])
+        >>> len(vectors)
+        2
     """
     model = _get_model()
     embeddings = model.encode(

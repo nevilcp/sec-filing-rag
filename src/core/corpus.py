@@ -1,15 +1,13 @@
-"""
-core/corpus.py
-
-Company identity layer for the EDGAR ingestion pipeline.
+"""Company identity layer for the EDGAR ingestion pipeline.
 
 Responsibilities:
-  - Fetch and cache the SEC EDGAR company-tickers map
-  - Resolve ticker symbols to their zero-padded 10-digit CIKs
-  - Enrich the target KNOWN_TICKERS with CIKs and company names for downstream ingestion
+  - Fetch and cache the SEC EDGAR company-tickers map.
+  - Resolve ticker symbols to zero-padded 10-digit CIKs.
+  - Enrich KNOWN_TICKERS with CIKs and company names for ingestion.
+  - Build the SEC-required User-Agent header value.
 
 Dependencies:
-  - httpx
+  - EDGAR_CONTACT_EMAIL must be set before any SEC request.
 """
 
 from __future__ import annotations
@@ -29,6 +27,7 @@ logger = get_logger(__name__)
 
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
+# Seven days, in seconds.
 CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
 _IN_MEMORY_CIK_MAP: dict[str, dict] | None = None
@@ -36,6 +35,9 @@ _IN_MEMORY_CIK_MAP: dict[str, dict] | None = None
 
 def _get_user_agent() -> str:
     """Build the SEC-required User-Agent header value.
+
+    The SEC requires a real email address in the User-Agent to identify
+    the caller and avoid IP-based throttling or blocks.
 
     Returns:
         A User-Agent string in the format 'ComplianceRAG <email>'.
@@ -53,18 +55,22 @@ def _get_user_agent() -> str:
 
 
 def get_cik_map() -> dict[str, dict]:
-    """Retrieves the EDGAR bulk company-tickers JSON.
+    """Return the EDGAR bulk company-tickers map.
 
-    Uses a disk-backed cache to avoid rate-limiting by the SEC endpoint.
-    Loads from cache if the file is younger than 7 days, otherwise issues
-    a fresh HTTP request.
+    Reads a disk cache when the file is younger than 7 days, to avoid
+    rate limiting by the SEC endpoint. Otherwise downloads a fresh copy
+    and rewrites the cache. The result is also kept in memory.
 
     Returns:
-        A dictionary mapping a string index to company details
-        (e.g., {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}).
+        A dict mapping a string index to company details, for example
+        {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "..."}}.
 
     Raises:
-        httpx.HTTPStatusError: If the SEC endpoint returns a non-200 status
+        ValueError: If EDGAR_CONTACT_EMAIL is not set, or the cache file
+            holds invalid JSON.
+        httpx.HTTPStatusError: If the SEC endpoint returns an error
+            status.
+        httpx.RequestError: If the request fails at the network level.
     """
     global _IN_MEMORY_CIK_MAP
     if _IN_MEMORY_CIK_MAP is not None:
@@ -97,16 +103,17 @@ def get_cik_map() -> dict[str, dict]:
 
 
 def resolve_cik(ticker: str) -> str:
-    """Resolves a ticker symbol to its zero-padded 10-digit CIK string.
+    """Resolve a ticker symbol to its zero-padded 10-digit CIK.
 
     Args:
-        ticker: The stock ticker symbol (case-insensitive).
+        ticker: The stock ticker symbol, case-insensitive.
 
     Returns:
-        The zero-padded 10-digit CIK string required for EDGAR archival lookups.
+        The 10-digit CIK string used for EDGAR lookups.
 
     Raises:
-        ValueError: If the ticker is not found in the enriched corpus manifest
+        ValueError: If the ticker is not in the corpus, or if the
+            company map cannot be built (see get_corpus_companies).
     """
     ticker_upper = ticker.upper()
     ticker_to_cik = {c["ticker"].upper(): c["cik"] for c in get_corpus_companies()}
@@ -116,17 +123,19 @@ def resolve_cik(ticker: str) -> str:
 
 
 def get_corpus_companies() -> list[dict]:
-    """Dynamically builds the company manifest from KNOWN_TICKERS using EDGAR data.
+    """Build the company manifest from KNOWN_TICKERS using EDGAR data.
 
-    Matches each ticker against the EDGAR company-tickers map to retrieve
-    the official CIK, returning a complete manifest for the ingestion pipeline.
+    Matches each ticker against the EDGAR company-tickers map to find
+    the official CIK and company name.
 
     Returns:
-        A list of dictionaries, where each dict contains the original
-        company metadata plus the resolved 'cik' string.
+        One dict per ticker, with 'ticker', 'company_name' and a
+        zero-padded 'cik' string.
 
     Raises:
-        ValueError: If any ticker in the manifest cannot be resolved via EDGAR
+        ValueError: If a ticker cannot be found in the EDGAR map.
+        httpx.HTTPError: If the company map must be downloaded and the
+            request fails (see get_cik_map).
     """
     enriched_manifest = []
 
