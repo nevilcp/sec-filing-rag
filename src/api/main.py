@@ -15,7 +15,6 @@ Dependencies:
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -88,7 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "extra": {
                 "host": config.API_HOST,
                 "port": config.API_PORT,
-                "phoenix_enabled": os.getenv("PHOENIX_ENABLED", "false"),
+                "phoenix_enabled": config.PHOENIX_ENABLED,
             }
         },
     )
@@ -108,16 +107,7 @@ app = FastAPI(title="SEC Compliance RAG API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:7860",
-        "http://127.0.0.1",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:7860",
-    ],
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -34,7 +34,7 @@ def main() -> None:
     imported transitively by the LLM stack. Transformers locks the global
     OTel provider on import, so late registration would be silently ignored.
     """
-    if os.getenv("PHOENIX_ENABLED", "").lower() == "true":
+    if config.PHOENIX_ENABLED:
         from openinference.instrumentation.langchain import LangChainInstrumentor
         from phoenix.otel import register
 
@@ -49,7 +49,7 @@ def main() -> None:
         "src.api.main:app",
         host=config.API_HOST,
         port=config.API_PORT,
-        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
+        reload=config.UVICORN_RELOAD,
     )
 
 
