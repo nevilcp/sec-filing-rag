@@ -86,6 +86,7 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
         result = graph.invoke(
             {
                 "query": payload.query,
+                "original_query": payload.query,
                 "messages": [],
                 "retrieved_docs": [],
                 "retrieval_grade": "irrelevant",
