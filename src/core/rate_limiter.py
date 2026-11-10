@@ -54,8 +54,7 @@ class RateLimitExhausted(Exception):
 _MODEL_LIMITS: dict[str, tuple[int, int, int, int]] = {
     "meta-llama/llama-prompt-guard-2-86m": (30, 14_400, 15_000, 500_000),
     "openai/gpt-oss-safeguard-20b": (30, 1_000, 8_000, 200_000),
-    "qwen/qwen3-32b": (60, 1_000, 10_000, 300_000),
-    "llama-3.1-8b-instant": (30, 14_400, 6_000, 500_000),
+    "openai/gpt-oss-20b": (30, 1_000, 8_000, 200_000),
     "openai/gpt-oss-120b": (30, 1_000, 8_000, 200_000),
     "gemini-3.5-flash": (15, 1_500, 1_000_000, 5_000_000),
     "gemini-3-flash-preview": (15, 1_500, 1_000_000, 5_000_000),
@@ -228,15 +227,15 @@ def get_output_guard_limiter() -> _SlidingWindowRateLimiter:
 
 
 def get_router_limiter() -> _SlidingWindowRateLimiter:
-    """Limiter for qwen/qwen3-32b (RPM 60, RPD 1,000)"""
+    """Return the limiter for the router model (config.ROUTER_MODEL)."""
     return _get_or_create_limiter(config.ROUTER_MODEL)
 
 
 def get_workhorse_limiter() -> _SlidingWindowRateLimiter:
-    """Limiter for llama-3.1-8b-instant (RPM 30, RPD 14,400).
+    """Return the limiter shared by the grader and rewriter models.
 
-    Shared by both the grader and rewriter nodes since they use the same
-    Groq model and Groq enforces limits at the organization level per model
+    Both nodes use the same Groq model, and Groq enforces limits per
+    model at the organization level, so they draw from one budget.
     """
     return _get_or_create_limiter(config.GRADER_MODEL)
 

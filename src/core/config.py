@@ -47,9 +47,11 @@ LOG_ROTATION_BACKUP_COUNT = 14
 
 INPUT_GUARD_MODEL = "meta-llama/llama-prompt-guard-2-86m"
 OUTPUT_GUARD_MODEL = "openai/gpt-oss-safeguard-20b"
-ROUTER_MODEL = "qwen/qwen3-32b"
-GRADER_MODEL = "llama-3.1-8b-instant"
-REWRITER_MODEL = "llama-3.1-8b-instant"
+ROUTER_MODEL = "openai/gpt-oss-20b"
+# Grader and rewriter use a different model from the router so each
+# role gets its own Groq per-model TPM budget on the free tier
+GRADER_MODEL = "openai/gpt-oss-120b"
+REWRITER_MODEL = "openai/gpt-oss-120b"
 GENERATION_MODEL = "gemini-3.5-flash"
 
 

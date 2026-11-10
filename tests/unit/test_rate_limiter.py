@@ -13,6 +13,7 @@ from unittest import mock
 
 import pytest
 
+from src.core import config
 from src.core.rate_limiter import (
     _LIMITER_CACHE,
     _get_or_create_limiter,
@@ -27,7 +28,7 @@ def test_estimate_llm_tokens():
 
 
 def test_get_model_limits_known():
-    limits = get_model_limits("llama-3.1-8b-instant")
+    limits = get_model_limits("openai/gpt-oss-120b")
     assert len(limits) == 4
 
 
@@ -133,9 +134,24 @@ def test_adjust_tokens():
 def test__get_or_create_limiter_caching():
     _LIMITER_CACHE.clear()
 
-    limiter1 = _get_or_create_limiter("llama-3.1-8b-instant")
-    limiter2 = _get_or_create_limiter("llama-3.1-8b-instant")
+    limiter1 = _get_or_create_limiter("openai/gpt-oss-120b")
+    limiter2 = _get_or_create_limiter("openai/gpt-oss-120b")
     limiter3 = _get_or_create_limiter("gemini-3.5-flash")
 
     assert limiter1 is limiter2
     assert limiter1 is not limiter3
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        config.INPUT_GUARD_MODEL,
+        config.OUTPUT_GUARD_MODEL,
+        config.ROUTER_MODEL,
+        config.GRADER_MODEL,
+        config.REWRITER_MODEL,
+        config.GENERATION_MODEL,
+    ],
+)
+def test_model_limits_configured_model_has_entry(model):
+    assert len(get_model_limits(model)) == 4
