@@ -140,7 +140,7 @@ def _build_groq_llm(
         "model": model_name,
         "api_key": api_key,
         "temperature": temperature,
-        "max_retries": config.RETRY_MAX_ATTEMPTS,
+        "max_retries": config.LLM_SDK_MAX_RETRIES,
     }
     if reasoning_effort is not None:
         kwargs["reasoning_effort"] = reasoning_effort
@@ -168,7 +168,7 @@ def _build_gemini_llm(
         model=model_name,
         google_api_key=api_key,
         temperature=temperature,
-        max_retries=config.RETRY_MAX_ATTEMPTS,
+        max_retries=config.LLM_SDK_MAX_RETRIES,
     )
 
 

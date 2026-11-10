@@ -115,7 +115,19 @@ class _SlidingWindowRateLimiter:
         return sum(tokens for _, tokens in self._request_log)
 
     def acquire(self, estimated_tokens: int) -> None:
-        """Block until the request fits within RPM, TPM, and cooldown"""
+        """Block until the request fits within RPM, TPM, and cooldown.
+
+        Args:
+            estimated_tokens: Estimated token cost of the request.
+
+        Raises:
+            RateLimitExhausted: If the estimate alone exceeds the TPM
+                limit, since waiting could never make it fit.
+        """
+        if estimated_tokens > self._tpm:
+            raise RateLimitExhausted(
+                f"[{self._label}] Request estimate {estimated_tokens} exceeds TPM limit {self._tpm}"
+            )
         waited = False
         while True:
             with self._lock:

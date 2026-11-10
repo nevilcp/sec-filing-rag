@@ -110,6 +110,9 @@ RETRY_MULTIPLIER_SECONDS = 2.0
 RETRY_MIN_WAIT_SECONDS = 5.0
 RETRY_MAX_WAIT_SECONDS = 60.0
 RETRY_MAX_ATTEMPTS = 8
+# SDK-level retries cover transient 5xx and connection errors. Tenacity
+# handles 429s, so a larger value here multiplies the call count.
+LLM_SDK_MAX_RETRIES = 2
 
 
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

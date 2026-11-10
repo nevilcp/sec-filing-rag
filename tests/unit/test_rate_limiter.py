@@ -16,6 +16,7 @@ import pytest
 from src.core import config
 from src.core.rate_limiter import (
     _LIMITER_CACHE,
+    RateLimitExhausted,
     _get_or_create_limiter,
     _SlidingWindowRateLimiter,
     estimate_llm_tokens,
@@ -155,3 +156,22 @@ def test__get_or_create_limiter_caching():
 )
 def test_model_limits_configured_model_has_entry(model):
     assert len(get_model_limits(model)) == 4
+
+
+def test_acquire_estimate_above_tpm_raises_without_sleeping():
+    limiter = _SlidingWindowRateLimiter(rpm=60, tpm=1000, model_label="test")
+
+    # Sleeping means the request would wait forever, so fail fast on it.
+    with mock.patch("time.sleep", side_effect=AssertionError("acquire slept")):
+        with pytest.raises(RateLimitExhausted):
+            limiter.acquire(1001)
+
+    assert limiter._current_tpm() == 0
+
+
+def test_acquire_estimate_equal_to_tpm_is_allowed():
+    limiter = _SlidingWindowRateLimiter(rpm=60, tpm=1000, model_label="test")
+
+    limiter.acquire(1000)
+
+    assert limiter._current_tpm() == 1000
