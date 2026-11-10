@@ -17,12 +17,11 @@ import uuid
 from datetime import UTC, datetime
 
 from qdrant_client import models
-from qdrant_client.http.exceptions import UnexpectedResponse
 
 from src.core import config
 from src.core.embeddings import embed_query
 from src.core.logging import get_logger
-from src.rag.vector_store import get_qdrant_client
+from src.rag.vector_store import ensure_collection, get_qdrant_client
 
 logger = get_logger(__name__)
 
@@ -39,35 +38,11 @@ class SemanticCache:
         """
         self.client = get_qdrant_client()
         self.collection_name = config.QDRANT_CACHE_COLLECTION
-
-        try:
-            collection_info = self.client.get_collection(self.collection_name)
-            existing_size = collection_info.config.params.vectors.size
-            if existing_size != config.QDRANT_VECTOR_SIZE:
-                logger.warning(
-                    "Existing Qdrant cache collection has vector size %d but config requires %d.\n"
-                    "         Deleting and recreating — all cached responses will be lost.\n"
-                    "         The cache will repopulate automatically on subsequent queries.",
-                    existing_size,
-                    config.QDRANT_VECTOR_SIZE,
-                )
-                self.client.delete_collection(self.collection_name)
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=models.VectorParams(
-                        size=config.QDRANT_VECTOR_SIZE,
-                        distance=models.Distance.COSINE,
-                    ),
-                )
-        except (UnexpectedResponse, ValueError):
-            logger.info("Creating Qdrant cache collection: %s", self.collection_name)
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=config.QDRANT_VECTOR_SIZE,
-                    distance=models.Distance.COSINE,
-                ),
-            )
+        ensure_collection(
+            self.client,
+            self.collection_name,
+            "All cached responses will be lost.\n         The cache will repopulate automatically on subsequent queries.",
+        )
 
     def lookup(self, query_text: str) -> str | None:
         """Check if a semantically similar query exists in the cache.

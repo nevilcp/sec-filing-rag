@@ -22,25 +22,23 @@ from sentence_transformers import CrossEncoder
 
 from src.core import config
 from src.core.constants import KNOWN_REGULATIONS, KNOWN_TICKERS
+from src.core.lazy import locked_singleton
 from src.core.logging import get_logger
 from src.rag.bm25_index import sparse_search
 from src.rag.vector_store import dense_search
 
 logger = get_logger(__name__)
-_BGE_RERANKER: CrossEncoder | None = None
 _RRF_K = 60
 
 
+@locked_singleton
 def _get_reranker() -> CrossEncoder:
     """Return the singleton BGE-Reranker-v2-m3 cross-encoder, loading on first call.
 
     Returns:
         The initialized CrossEncoder instance.
     """
-    global _BGE_RERANKER
-    if _BGE_RERANKER is None:
-        _BGE_RERANKER = CrossEncoder("BAAI/bge-reranker-v2-m3")
-    return _BGE_RERANKER
+    return CrossEncoder("BAAI/bge-reranker-v2-m3")
 
 
 def _detect_regulation(query_text: str) -> str | None:

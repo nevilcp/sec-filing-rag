@@ -18,19 +18,16 @@ Dependencies:
 
 from __future__ import annotations
 
-import threading
-
 from FlagEmbedding import BGEM3FlagModel
 
 from src.core import config
+from src.core.lazy import locked_singleton
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-_MODEL: BGEM3FlagModel | None = None
-_MODEL_LOCK = threading.Lock()
 
-
+@locked_singleton
 def _get_model() -> BGEM3FlagModel:
     """Return the singleton BGE-M3 model, initializing it on first call.
 
@@ -40,16 +37,12 @@ def _get_model() -> BGEM3FlagModel:
     Returns:
         The initialized BGEM3FlagModel instance.
     """
-    global _MODEL
-    with _MODEL_LOCK:
-        if _MODEL is None:
-            logger.info("Loading BGE-M3 embedding model — first call will download weights (~2.3 GB).")
-            _MODEL = BGEM3FlagModel(
-                config.BGE_M3_MODEL_NAME,
-                use_fp16=True,
-                normalize_embeddings=True,
-            )
-        return _MODEL
+    logger.info("Loading BGE-M3 embedding model — first call will download weights (~2.3 GB).")
+    return BGEM3FlagModel(
+        config.BGE_M3_MODEL_NAME,
+        use_fp16=True,
+        normalize_embeddings=True,
+    )
 
 
 def embed_query(text: str) -> list[float]:

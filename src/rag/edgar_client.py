@@ -15,7 +15,6 @@ Dependencies:
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from pathlib import Path
@@ -24,10 +23,14 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from src.core import config
+from src.core.corpus import _get_user_agent
 from src.core.fileio import atomic_write_text
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# HTTP statuses that signal transient SEC throttling.
+_RETRYABLE_STATUS = (429, 503)
 
 _LAST_REQUEST_TIME: float = 0.0
 _THROTTLE_LOCK = threading.Lock()
@@ -45,27 +48,6 @@ def _throttle() -> None:
         _LAST_REQUEST_TIME = time.time()
 
 
-def _get_user_agent() -> str:
-    """Build the SEC-required User-Agent header value.
-
-    The SEC mandates a real email address in User-Agent to identify
-    the caller and avoid IP-based throttling or blocks.
-
-    Returns:
-        A User-Agent string in the format 'ComplianceRAG <email>'.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-    """
-    email = os.getenv("EDGAR_CONTACT_EMAIL")
-    if not email:
-        raise ValueError(
-            "CRITICAL: 'EDGAR_CONTACT_EMAIL' environment variable is missing. "
-            "The SEC requires a real email address in the User-Agent header to avoid IP blocks."
-        )
-    return f"ComplianceRAG {email}"
-
-
 def _is_retryable_http_error(exc: BaseException) -> bool:
     """Return True for HTTP 429 and 503 errors from the SEC EDGAR API.
 
@@ -79,7 +61,7 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
         True if the error warrants a retry.
     """
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code in (429, 503)
+        return exc.response.status_code in _RETRYABLE_STATUS
     return False
 
 
@@ -93,62 +75,53 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     ),
     stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
 )
-def _edgar_get_json(url: str) -> dict:
-    """Throttle, then fetch a JSON document from an EDGAR endpoint.
+def _edgar_get(url: str) -> httpx.Response:
+    """Throttle, then GET a URL from EDGAR with the required headers.
 
     Decorated with tenacity retry logic for 429/503 responses. Throttling
-    is applied before the HTTP call to respect the SEC's request-rate
+    is applied before each HTTP call to respect the SEC's request-rate
     policy rather than relying solely on reactive backoff.
+
+    Args:
+        url: The fully-qualified EDGAR URL to fetch.
+
+    Returns:
+        The successful HTTP response.
+
+    Raises:
+        httpx.HTTPStatusError: On non-retryable HTTP errors.
+    """
+    _throttle()
+    headers = {"User-Agent": _get_user_agent(), "Accept-Encoding": "gzip, deflate"}
+    logger.debug("Fetching EDGAR URL %s", url)
+    with httpx.Client(timeout=60.0) as client:
+        response = client.get(url, headers=headers)
+        response.raise_for_status()
+        return response
+
+
+def _edgar_get_json(url: str) -> dict:
+    """Fetch a JSON document from an EDGAR endpoint and parse it.
 
     Args:
         url: The fully-qualified EDGAR API URL to fetch.
 
     Returns:
         The parsed JSON response as a Python dict.
-
-    Raises:
-        httpx.HTTPStatusError: On non-retryable HTTP errors.
     """
-    _throttle()
-    headers = {"User-Agent": _get_user_agent(), "Accept-Encoding": "gzip, deflate"}
-    logger.debug("Fetching EDGAR JSON from %s", url)
-    with httpx.Client(timeout=60.0) as client:
-        response = client.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
+    return _edgar_get(url).json()
 
 
-@retry(
-    reraise=True,
-    retry=retry_if_exception(_is_retryable_http_error),
-    wait=wait_exponential(
-        multiplier=config.RETRY_MULTIPLIER_SECONDS,
-        min=config.RETRY_MIN_WAIT_SECONDS,
-        max=config.RETRY_MAX_WAIT_SECONDS,
-    ),
-    stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
-)
 def _edgar_get_text(url: str) -> str:
-    """Throttle, then fetch a raw text document from an EDGAR endpoint.
-
-    Decorated with tenacity retry logic for 429/503 responses.
+    """Fetch a raw text document from an EDGAR endpoint.
 
     Args:
         url: The fully-qualified EDGAR document URL to fetch.
 
     Returns:
         The raw response body as a string.
-
-    Raises:
-        httpx.HTTPStatusError: On non-retryable HTTP errors.
     """
-    _throttle()
-    headers = {"User-Agent": _get_user_agent(), "Accept-Encoding": "gzip, deflate"}
-    logger.debug("Fetching EDGAR text from %s", url)
-    with httpx.Client(timeout=60.0) as client:
-        response = client.get(url, headers=headers)
-        response.raise_for_status()
-        return response.text
+    return _edgar_get(url).text
 
 
 def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) -> list[dict]:

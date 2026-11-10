@@ -17,8 +17,6 @@ Dependencies:
 from __future__ import annotations
 
 from opentelemetry.trace import Status, StatusCode
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
 from src.core.llm_factory import (
@@ -28,28 +26,9 @@ from src.core.llm_factory import (
 from src.core.logging import get_logger
 from src.core.rate_limiter import get_output_guard_limiter
 from src.core.tracing import chain_span, set_span_output
+from src.guardrails.pii import PII_ENTITIES, analyzer, anonymizer
 
 logger = get_logger(__name__)
-
-_ANALYZER: AnalyzerEngine | None = None
-_ANONYMIZER: AnonymizerEngine | None = None
-_PII_ENTITIES = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN"]
-
-
-def _analyzer() -> AnalyzerEngine:
-    """Return the singleton Presidio AnalyzerEngine, initializing on first call."""
-    global _ANALYZER
-    if _ANALYZER is None:
-        _ANALYZER = AnalyzerEngine()
-    return _ANALYZER
-
-
-def _anonymizer() -> AnonymizerEngine:
-    """Return the singleton Presidio AnonymizerEngine, initializing on first call."""
-    global _ANONYMIZER
-    if _ANONYMIZER is None:
-        _ANONYMIZER = AnonymizerEngine()
-    return _ANONYMIZER
 
 
 def _anonymize_pii(text: str) -> tuple[str, list[str]]:
@@ -65,7 +44,7 @@ def _anonymize_pii(text: str) -> tuple[str, list[str]]:
         A tuple of (anonymized_text, detected_entity_types). If no PII
         is found, returns the original text unchanged with an empty list.
     """
-    detections = _analyzer().analyze(text=text, language="en", entities=_PII_ENTITIES)
+    detections = analyzer().analyze(text=text, language="en", entities=PII_ENTITIES)
     if not detections:
         return text, []
 
@@ -73,7 +52,7 @@ def _anonymize_pii(text: str) -> tuple[str, list[str]]:
     operators = {
         entity_type: OperatorConfig("replace", {"new_value": f"<{entity_type}>"}) for entity_type in entity_types
     }
-    anonymized = _anonymizer().anonymize(
+    anonymized = anonymizer().anonymize(
         text=text,
         analyzer_results=detections,
         operators=operators,

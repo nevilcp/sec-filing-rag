@@ -21,6 +21,7 @@ from typing import Any
 
 from src.agent.state import ComplianceState
 from src.core import config
+from src.core.lazy import locked_singleton
 from src.core.llm_factory import (
     get_generation_llm,
     get_grader_llm,
@@ -34,7 +35,6 @@ from src.rag.cache import SemanticCache
 from src.rag.retriever import retrieve
 
 logger = get_logger(__name__)
-_CACHE: SemanticCache | None = None
 
 _CATEGORY_INSTRUCTIONS = {
     "compliance_check": (
@@ -89,6 +89,7 @@ _CATEGORY_INSTRUCTIONS = {
 }
 
 
+@locked_singleton
 def _cache() -> SemanticCache:
     """Return the process-lifetime SemanticCache singleton.
 
@@ -98,10 +99,7 @@ def _cache() -> SemanticCache:
     Returns:
         The shared SemanticCache instance.
     """
-    global _CACHE
-    if _CACHE is None:
-        _CACHE = SemanticCache()
-    return _CACHE
+    return SemanticCache()
 
 
 def _original_query(state: ComplianceState) -> str:

@@ -16,7 +16,6 @@ Dependencies:
 from __future__ import annotations
 
 from opentelemetry.trace import Status, StatusCode
-from presidio_analyzer import AnalyzerEngine
 
 from src.core import config
 from src.core.llm_factory import (
@@ -26,19 +25,9 @@ from src.core.llm_factory import (
 from src.core.logging import get_logger
 from src.core.rate_limiter import get_input_guard_limiter
 from src.core.tracing import chain_span, set_span_output
+from src.guardrails.pii import PII_ENTITIES, analyzer
 
 logger = get_logger(__name__)
-
-_ANALYZER: AnalyzerEngine | None = None
-_PII_ENTITIES = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN"]
-
-
-def _analyzer() -> AnalyzerEngine:
-    """Return the singleton Presidio AnalyzerEngine, initializing on first call."""
-    global _ANALYZER
-    if _ANALYZER is None:
-        _ANALYZER = AnalyzerEngine()
-    return _ANALYZER
 
 
 def _detect_pii_entities(text: str) -> list[str]:
@@ -51,7 +40,7 @@ def _detect_pii_entities(text: str) -> list[str]:
         A list of unique entity type strings in detection order
         (e.g. ['EMAIL_ADDRESS', 'US_SSN']).
     """
-    results = _analyzer().analyze(text=text, language="en", entities=_PII_ENTITIES)
+    results = analyzer().analyze(text=text, language="en", entities=PII_ENTITIES)
     ordered_types: list[str] = []
     for item in results:
         entity_type = str(item.entity_type)

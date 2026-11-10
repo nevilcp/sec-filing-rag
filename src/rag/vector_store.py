@@ -23,29 +23,60 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 
 from src.core import config
 from src.core.embeddings import embed_query
+from src.core.lazy import locked_singleton
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-_QDRANT_CLIENT: QdrantClient | None = None
-_COLLECTION_CHECKED: bool = False
 
-
+@locked_singleton
 def get_qdrant_client() -> QdrantClient:
     """Return the singleton local Qdrant client, creating it on first call.
 
-    The client is stored in a module-level global so repeated calls within
-    the same process reuse the same connection to the local file-based store.
+    Repeated calls within the same process reuse the same connection to
+    the local file-based store.
 
     Returns:
         The initialized QdrantClient instance.
     """
-    global _QDRANT_CLIENT
-    if _QDRANT_CLIENT is None:
-        _QDRANT_CLIENT = QdrantClient(path=config.QDRANT_PATH)
-    return _QDRANT_CLIENT
+    return QdrantClient(path=config.QDRANT_PATH)
 
 
+def ensure_collection(client: QdrantClient, name: str, mismatch_note: str) -> None:
+    """Create a cosine collection, or recreate it if its vector size is stale.
+
+    Args:
+        client: The Qdrant client to operate on.
+        name: The collection name.
+        mismatch_note: Consequence and next step to log when an existing
+            collection has the wrong vector size and is recreated.
+
+    Raises:
+        qdrant_client.http.exceptions.UnexpectedResponse: On unexpected
+            Qdrant API errors during creation.
+    """
+    vectors_config = models.VectorParams(size=config.QDRANT_VECTOR_SIZE, distance=models.Distance.COSINE)
+    try:
+        existing_size = client.get_collection(name).config.params.vectors.size
+    except (UnexpectedResponse, ValueError):
+        logger.info("Creating Qdrant collection: %s", name)
+        client.create_collection(collection_name=name, vectors_config=vectors_config)
+        return
+
+    if existing_size != config.QDRANT_VECTOR_SIZE:
+        logger.warning(
+            "Existing Qdrant collection %s has vector size %d but config requires %d.\n"
+            "         Deleting and recreating. %s",
+            name,
+            existing_size,
+            config.QDRANT_VECTOR_SIZE,
+            mismatch_note,
+        )
+        client.delete_collection(name)
+        client.create_collection(collection_name=name, vectors_config=vectors_config)
+
+
+@locked_singleton
 def get_filings_collection() -> None:
     """Ensure the primary filings collection exists in Qdrant.
 
@@ -58,39 +89,11 @@ def get_filings_collection() -> None:
         qdrant_client.http.exceptions.UnexpectedResponse: On unexpected
             Qdrant API errors during creation.
     """
-    global _COLLECTION_CHECKED
-    if _COLLECTION_CHECKED:
-        return
-
-    client = get_qdrant_client()
-    try:
-        collection_info = client.get_collection(config.QDRANT_COLLECTION_NAME)
-        existing_size = collection_info.config.params.vectors.size
-        if existing_size != config.QDRANT_VECTOR_SIZE:
-            logger.warning(
-                "Existing Qdrant collection has vector size %d but config requires %d.\n"
-                "         Deleting and recreating — all indexed documents will be lost.\n"
-                "         Re-run `ingest` to rebuild the corpus.",
-                existing_size,
-                config.QDRANT_VECTOR_SIZE,
-            )
-            client.delete_collection(config.QDRANT_COLLECTION_NAME)
-            client.create_collection(
-                collection_name=config.QDRANT_COLLECTION_NAME,
-                vectors_config=models.VectorParams(
-                    size=config.QDRANT_VECTOR_SIZE,
-                    distance=models.Distance.COSINE,
-                ),
-            )
-    except (UnexpectedResponse, ValueError):
-        client.create_collection(
-            collection_name=config.QDRANT_COLLECTION_NAME,
-            vectors_config=models.VectorParams(
-                size=config.QDRANT_VECTOR_SIZE,
-                distance=models.Distance.COSINE,
-            ),
-        )
-    _COLLECTION_CHECKED = True
+    ensure_collection(
+        get_qdrant_client(),
+        config.QDRANT_COLLECTION_NAME,
+        "All indexed documents will be lost.\n         Re-run `ingest` to rebuild the corpus.",
+    )
 
 
 def dense_search(
