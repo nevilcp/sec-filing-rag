@@ -15,9 +15,9 @@ import pytest
 
 from src.core.rate_limiter import (
     _LIMITER_CACHE,
+    _get_or_create_limiter,
     _SlidingWindowRateLimiter,
     estimate_llm_tokens,
-    get_limiter_for_model,
     get_model_limits,
 )
 
@@ -130,12 +130,12 @@ def test_adjust_tokens():
         assert limiter._current_tpm() == 50
 
 
-def test_get_limiter_for_model_caching():
+def test__get_or_create_limiter_caching():
     _LIMITER_CACHE.clear()
 
-    limiter1 = get_limiter_for_model("llama-3.1-8b-instant")
-    limiter2 = get_limiter_for_model("llama-3.1-8b-instant")
-    limiter3 = get_limiter_for_model("gemini-3.5-flash")
+    limiter1 = _get_or_create_limiter("llama-3.1-8b-instant")
+    limiter2 = _get_or_create_limiter("llama-3.1-8b-instant")
+    limiter3 = _get_or_create_limiter("gemini-3.5-flash")
 
     assert limiter1 is limiter2
     assert limiter1 is not limiter3
