@@ -1,5 +1,4 @@
-"""
-Unit tests for the tracing helpers.
+"""Unit tests for the tracing helpers.
 
 Responsibilities:
   - Verify chain_span sets the OpenInference attributes on a standard

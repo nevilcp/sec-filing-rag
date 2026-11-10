@@ -1,5 +1,4 @@
-"""
-Pytest configuration for the unit test suite.
+"""Pytest configuration for the unit test suite.
 
 Responsibilities:
   - Pin environment variables before any src module is imported, so

@@ -1,18 +1,12 @@
-"""
-api/schemas.py
-
-Pydantic request/response schemas for the SEC compliance RAG API.
+"""Pydantic request and response schemas for the SEC compliance RAG API.
 
 Responsibilities:
-  - Define and validate the structure of incoming query requests.
-  - Define the structure of outgoing query responses and citations.
+  - Define and validate the incoming query request.
+  - Define the outgoing query response and its source citations.
 
 Not responsible for:
   - Business logic or LLM invocation (see api/routes.py).
   - Guardrail enforcement (see guardrails/).
-
-Dependencies:
-  - pydantic >= 2.0
 """
 
 from __future__ import annotations
@@ -23,10 +17,10 @@ from src.agent.state import QueryCategory
 
 
 class SourceCitation(BaseModel):
-    """A single document passage retrieved to support a generated answer.
+    """A document passage retrieved to support a generated answer.
 
-    Fields correspond to EDGAR filing provenance metadata stored in Qdrant
-    alongside each embedded chunk.
+    The fields are the EDGAR filing provenance metadata stored in Qdrant
+    with each embedded chunk. chunk_text is the passage itself.
     """
 
     ticker: str

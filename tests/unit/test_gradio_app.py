@@ -1,5 +1,4 @@
-"""
-Unit tests for the Gradio citation panel.
+"""Unit tests for the Gradio citation panel.
 
 Responsibilities:
   - Verify values from the API are escaped before they reach HTML.

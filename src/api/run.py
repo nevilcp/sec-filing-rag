@@ -1,22 +1,19 @@
-"""
-api/run.py
-
-Uvicorn server entry point and Phoenix observability launcher.
+"""Uvicorn server entry point and Phoenix observability launcher.
 
 Responsibilities:
-  - Register the Arize Phoenix OTel TracerProvider before uvicorn imports
-    any instrumented library, preventing a provider-registration race.
+  - Register the Arize Phoenix OTel TracerProvider before uvicorn
+    imports any instrumented library, which avoids a provider
+    registration race.
   - Launch the Uvicorn ASGI server for the FastAPI application.
-  - Provide a companion entry point for starting the Phoenix server.
+  - Provide a companion entry point that starts the Phoenix server.
 
 Not responsible for:
   - FastAPI app configuration (see api/main.py).
   - Logging setup (see core/logging.py).
 
 Dependencies:
-  - uvicorn
-  - openinference-instrumentation-langchain (optional, when PHOENIX_ENABLED)
-  - arize-phoenix (optional, when PHOENIX_ENABLED)
+  - openinference-instrumentation-langchain and arize-phoenix, needed
+    only when PHOENIX_ENABLED is true.
 """
 
 import os
@@ -27,12 +24,12 @@ from src.core import config
 
 
 def main() -> None:
-    """Start the SEC RAG API server, optionally enabling Phoenix tracing.
+    """Start the SEC RAG API server, with Phoenix tracing if enabled.
 
-    Phoenix OTel registration must happen here — before uvicorn.run() —
+    Phoenix OTel registration must happen here, before uvicorn.run(),
     so the TracerProvider is in place before the transformers library is
-    imported transitively by the LLM stack. Transformers locks the global
-    OTel provider on import, so late registration would be silently ignored.
+    imported by the LLM stack. Transformers locks the global OTel
+    provider on import, so late registration would be silently ignored.
     """
     if config.PHOENIX_ENABLED:
         from openinference.instrumentation.langchain import LangChainInstrumentor
@@ -54,10 +51,10 @@ def main() -> None:
 
 
 def run_phoenix() -> None:
-    """CLI entry point: start the Arize Phoenix observability server.
+    """Start the Arize Phoenix observability server as a CLI command.
 
-    Passes the configured port via sys.argv so the Phoenix CLI picks it
-    up without requiring manual flag injection by the caller.
+    Adds the configured port to sys.argv when no arguments were given,
+    so the Phoenix CLI picks it up.
     """
     import sys
 

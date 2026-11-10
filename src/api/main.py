@@ -1,16 +1,9 @@
-"""
-api/main.py
-
-FastAPI application setup for SEC compliance RAG API.
+"""FastAPI application setup for the SEC compliance RAG API.
 
 Responsibilities:
-  - Initialize the FastAPI application and configure CORS
-  - Manage application lifespan (startup/shutdown logging, Qdrant init)
-  - Attach access logging middleware for all HTTP requests
-
-Dependencies:
-  - fastapi
-  - openinference-instrumentation-langchain
+  - Create the FastAPI app and configure CORS.
+  - Manage the app lifespan: build the graph and metrics at startup.
+  - Add access logging middleware for every HTTP request.
 """
 
 from __future__ import annotations
@@ -34,16 +27,19 @@ configure_logging()
 _app_log = get_app_logger()
 _api_log = get_api_logger()
 
+# These imports follow configure_logging() on purpose: modules that
+# log at import time must see the configured handlers. This is why
+# E402 is ignored for this file.
 from src.agent.graph import compile_graph
 from src.api.routes import router
 from src.rag.vector_store import get_filings_collection
 
 
 class _AccessLogMiddleware(BaseHTTPMiddleware):
-    """Logs every HTTP request to the ``sec_rag.api`` channel (JSON, file only)."""
+    """Log every HTTP request to the ``sec_rag.api`` channel."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Record method, path, status code, and latency for every request.
+        """Record method, path, status code and latency of a request.
 
         Args:
             request: The incoming HTTP request.
@@ -72,11 +68,15 @@ class _AccessLogMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Manage application startup and shutdown lifecycle.
+    """Manage application startup and shutdown.
 
-    On startup: initializes the Qdrant filings collection and compiles the
-    LangGraph graph, attaching both to app.state so route handlers can
-    access them without module-level globals.
+    On startup it ensures the Qdrant filings collection exists, then
+    compiles the LangGraph graph and creates the metrics counters. The
+    graph and counters are stored on app.state, so route handlers reach
+    them without module-level globals.
+
+    Args:
+        app: The FastAPI application.
 
     Yields:
         Control to the ASGI server while the application runs.

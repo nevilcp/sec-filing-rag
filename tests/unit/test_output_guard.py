@@ -1,12 +1,10 @@
-"""
-tests/unit/test_output_guard.py
-
-Unit tests for output sanitization and PII guardrails.
+"""Unit tests for output sanitization and the output guardrail.
 
 Responsibilities:
-  - Verify Presidio successfully redacts sensitive PII entities
-  - Ensure the GPT safeguard model correctly flags definitive legal advice
-  - Validate the full output pipeline attaches appropriate warning signals
+  - Check that PII is redacted from responses.
+  - Check that the policy classifier flags definitive legal advice.
+  - Check that validate_output attaches warnings and keeps PII out of
+    the classifier prompt.
 """
 
 from unittest import mock

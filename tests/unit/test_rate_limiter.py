@@ -1,12 +1,10 @@
-"""
-tests/unit/test_rate_limiter.py
-
-Unit tests for the thread-safe sliding window rate limiter.
+"""Unit tests for the thread-safe sliding window rate limiter.
 
 Responsibilities:
-  - Validate token estimation multipliers
-  - Ensure request/token buckets enforce exact constraints
-  - Test cooldown waiting logic and window purging behavior
+  - Check the token estimate and the per-model limit lookup.
+  - Check that the request and token limits, the cooldown and window
+    purging behave as documented.
+  - Check the shared per-model limiter cache.
 """
 
 from unittest import mock

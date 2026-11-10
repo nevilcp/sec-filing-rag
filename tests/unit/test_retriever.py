@@ -1,12 +1,10 @@
-"""
-tests/unit/test_retriever.py
-
-Unit tests for the hybrid RAG retrieval pipeline.
+"""Unit tests for the hybrid retrieval pipeline.
 
 Responsibilities:
-  - Verify Reciprocal Rank Fusion (RRF) correctly boosts and deduplicates shared results
-  - Test cross-encoder reranking score ordering
-  - Validate entity detection and word-boundary matching for query-directed search filters
+  - Check that Reciprocal Rank Fusion merges and deduplicates results.
+  - Check the ordering of cross-encoder reranking scores.
+  - Check ticker and regulation detection in queries, including word
+    boundary matching.
 """
 
 from unittest import mock

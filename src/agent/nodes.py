@@ -1,16 +1,10 @@
-"""
-agent/nodes.py
-
-LangGraph node implementations for SEC compliance workflow.
+"""LangGraph node implementations for the SEC compliance workflow.
 
 Responsibilities:
-  - Implement the core business logic for each LangGraph node
-  - Route queries to optimal generation strategies
-  - Execute hybrid retrieval, relevancy grading, and prompt rewriting
-  - Synthesize grounded final responses from retrieved context
-
-Dependencies:
-  - langchain_core
+  - Implement the business logic of each LangGraph node.
+  - Classify queries so the answer style fits the question.
+  - Run hybrid retrieval, relevance grading and query rewriting.
+  - Write grounded final answers from the retrieved context.
 """
 
 from __future__ import annotations
@@ -42,8 +36,8 @@ logger = get_logger(__name__)
 def _cache() -> SemanticCache:
     """Return the process-lifetime SemanticCache singleton.
 
-    Deferred initialization avoids creating the Qdrant connection at import
-    time, which would fail if the vector store is not yet available.
+    Deferred initialization avoids opening the Qdrant connection at
+    import time, which would fail if the vector store is unavailable.
 
     Returns:
         The shared SemanticCache instance.
@@ -57,13 +51,20 @@ def _original_query(state: ComplianceState) -> str:
 
 
 def process_input(state: ComplianceState) -> dict[str, Any]:
-    """Classifies the query intent to route to the correct synthesis strategy.
+    """Classify the query into a category that selects the answer style.
+
+    Falls back to 'general' when the model reply cannot be parsed.
 
     Args:
         state: Current graph state containing the user query.
 
     Returns:
-        State update dictionary containing the determined query_category
+        A state update holding the query_category.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
+        RateLimitExhausted: If the prompt can never fit the router
+            model's token limit.
     """
     query_text = state["query"]
     prompt = router_prompt(query_text)
@@ -98,13 +99,13 @@ def process_input(state: ComplianceState) -> dict[str, Any]:
 
 
 def cache_check(state: ComplianceState) -> dict[str, Any]:
-    """Queries the semantic cache for an existing response to a similar query.
+    """Look up the original query in the semantic cache.
 
     Args:
         state: Current graph state.
 
     Returns:
-        State update indicating cache hit status and the cached response if found
+        A state update with cache_hit, plus final_response on a hit.
     """
     cached = _cache().lookup(_original_query(state))
     if cached is not None:
@@ -115,16 +116,21 @@ def cache_check(state: ComplianceState) -> dict[str, Any]:
 
 
 def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
-    """Executes hybrid retrieval and grades the relevance of the retrieved context.
+    """Retrieve documents and grade how relevant they are.
 
-    Combines mathematical scoring (RRF/BGE thresholds) with a semantic LLM judge
-    to determine if the context is sufficient to answer the query.
+    The context counts as relevant only if it passes both a score check
+    (mean and top-1 reranker score against config thresholds) and an LLM
+    judge that reads previews of the first five documents.
 
     Args:
         state: Current graph state.
 
     Returns:
-        State update containing retrieved documents and their context relevance
+        A state update with retrieved_docs and context_relevance.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
+        FileNotFoundError: If the BM25 index has not been built.
     """
     query_text = state["query"]
     docs = retrieve(query_text, company_filter=state.get("company_filter"))
@@ -182,13 +188,13 @@ def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
 
 
 def grade_retrieval(state: ComplianceState) -> dict[str, Any]:
-    """Pass-through node to emit the context relevance grade for routing.
+    """Copy context_relevance into retrieval_grade for the router.
 
     Args:
         state: Current graph state.
 
     Returns:
-        State update setting the formal retrieval_grade
+        A state update holding the retrieval_grade.
     """
     context_relevance = state.get("context_relevance", "irrelevant")
     logger.info(
@@ -199,16 +205,22 @@ def grade_retrieval(state: ComplianceState) -> dict[str, Any]:
 
 
 def rewrite_query(state: ComplianceState) -> dict[str, Any]:
-    """Rewrites the user query to improve retrieval performance.
+    """Rewrite the query to improve retrieval.
 
-    Triggered when initial retrieval fails. Expands SEC terminology and
-    makes entity references explicit.
+    Runs after a failed retrieval. The rewrite uses formal SEC
+    terminology and explicit entity names. Once the limit
+    config.MAX_CRAG_REWRITES is reached, it only sets retrieval_grade
+    to 'relevant' so the graph moves on to respond.
 
     Args:
         state: Current graph state.
 
     Returns:
-        State update with the rewritten query and incremented rewrite count
+        A state update with the rewritten query and the incremented
+        rewrite_count.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
     """
     rewrite_count = int(state.get("rewrite_count", 0))
     if rewrite_count >= config.MAX_CRAG_REWRITES:
@@ -271,16 +283,23 @@ def _format_sources(docs: list[RetrievedDoc]) -> str:
 
 
 def respond(state: ComplianceState) -> dict[str, Any]:
-    """Synthesizes the final response using the category-specific strategy.
+    """Write the final answer for the query.
 
-    Strictly grounds the output in the retrieved context and mandates inline
-    citations for all factual claims.
+    A cache hit returns the cached text unchanged. An irrelevant grade
+    returns a fixed "could not find" message. Otherwise the generation
+    model answers from the retrieved context in the style of the query
+    category, a Sources footer is appended and the result is cached
+    under the original query.
 
     Args:
         state: Current graph state.
 
     Returns:
-        State update containing the final response string and citations
+        A state update with final_response, which includes the Sources
+        footer, and an empty retrieved_docs for the irrelevant case.
+
+    Raises:
+        RuntimeError: If GEMINI_API_KEY is not set.
     """
     query_text = _original_query(state)
     docs = state.get("retrieved_docs", [])

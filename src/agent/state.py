@@ -1,20 +1,18 @@
-"""
-agent/state.py
-
-State contract for the compliance LangGraph workflow.
+"""State contract for the compliance LangGraph workflow.
 
 Responsibilities:
-  - Define the structured state payload passed between graph nodes
-  - Enforce typing for retrieval results, CRAG tracking, and outputs
+  - Define the typed state dict that LangGraph passes between nodes.
+  - Define the shared document and query-category types.
 
-Dependencies:
-  - typing
+Not responsible for:
+  - Runtime validation. The types are for static checking only.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
+# The values the router can assign to ComplianceState.query_category.
 QueryCategory = Literal[
     "compliance_check",
     "document_analysis",
@@ -39,15 +37,28 @@ def _doc_meta(doc: RetrievedDoc) -> dict[str, Any]:
 
 
 class ComplianceState(TypedDict):
-    """Immutable state contract passed between every node in the CRAG graph.
+    """State shared by every node in the CRAG graph.
 
-    All fields are set by specific nodes; downstream nodes must treat
-    absent keys as their zero value (empty string, empty list, False).
-    The graph compiler enforces this via LangGraph's TypedDict reducer.
+    A plain TypedDict: nothing enforces the types at runtime. Each node
+    returns a partial update, and LangGraph overwrites those keys, with
+    no custom reducers. Nodes read optional keys with state.get() and
+    treat a missing key as its zero value.
+
+    Attributes:
+        query: The text used for retrieval. CRAG rewrites replace it.
+        original_query: The user's text as submitted.
+        retrieved_docs: Chunks from the latest retrieval.
+        retrieval_grade: The routing decision after grading.
+        rewrite_count: How many query rewrites have run.
+        final_response: The answer text, with the Sources footer.
+        cache_hit: True if the answer came from the semantic cache.
+        query_category: The router's category for the query.
+        context_relevance: The grader's verdict on the latest
+            retrieval, or None before grading.
+        company_filter: Optional ticker that restricts dense search.
     """
 
     query: str
-    # The user's text as submitted. `query` is replaced by CRAG rewrites.
     original_query: str
     retrieved_docs: list[RetrievedDoc]
     retrieval_grade: Literal["relevant", "irrelevant"]

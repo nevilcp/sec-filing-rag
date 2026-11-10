@@ -1,7 +1,4 @@
-"""
-eval/run_phoenix_evals.py
-
-Arize Phoenix evaluation runner using a Groq-hosted judge model.
+"""Arize Phoenix evaluation runner using a Groq-hosted judge model.
 
 Responsibilities:
   - Connect to the local Phoenix server and fetch recorded traces.
@@ -13,7 +10,7 @@ Not responsible for:
   - Starting the Phoenix server (see api/run.py or the phoenix CLI).
 
 Dependencies:
-  - arize-phoenix >= 0.14
+  - A running Phoenix server with recorded traces.
   - GROQ_API_KEY must be set in the environment.
 """
 
@@ -37,15 +34,20 @@ logger = get_logger(__name__)
 async def main_async() -> None:
     """Fetch traces from Phoenix and run LLM-as-a-judge evaluations.
 
-    Connects to the local Phoenix instance, retrieves all CHAIN spans from
-    the Phoenix project, runs an answer-relevance classification pass using
-    config.EVAL_MODEL, and logs the scored annotations back to Phoenix.
+    Connects to the local Phoenix instance, retrieves all CHAIN spans
+    from the Phoenix project, runs an answer-relevance classification
+    pass with config.EVAL_MODEL and logs the scored annotations back to
+    Phoenix. It returns early, after logging, if there are no traces or
+    no CHAIN spans.
 
     Concurrency is limited by config.EVAL_CONCURRENCY to respect Groq
-    free-tier rate limits.
-    Context relevance and faithfulness evaluations are omitted here because
-    they require attributes.retrieval.documents to be populated on the CHAIN
-    span, which depends on the instrumentation configuration.
+    free-tier rate limits. Context relevance and faithfulness
+    evaluations are omitted because they need
+    attributes.retrieval.documents on the CHAIN span, which depends on
+    the instrumentation configuration.
+
+    Raises:
+        KeyError: If GROQ_API_KEY is not set.
     """
     base_url = f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}"
     logger.info("Connecting to Phoenix Client at %s...", base_url)
@@ -99,7 +101,7 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    """CLI entry point: run the async evaluation loop synchronously."""
+    """Run the async evaluation loop as a CLI command."""
     asyncio.run(main_async())
 
 
