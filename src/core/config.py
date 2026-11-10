@@ -24,6 +24,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# GROQ_API_KEY, GEMINI_API_KEY and EDGAR_CONTACT_EMAIL are not read here.
+# Their consumers read the environment at call time because tests
+# monkeypatch these variables after this module has been imported.
+
+
+def _env_flag(name: str) -> bool:
+    """Return True when the environment variable is set to 'true'."""
+    return os.getenv(name, "").lower() == "true"
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -56,6 +65,9 @@ GENERATION_MODEL = "gemini-3.5-flash"
 # OpenAI-compatible endpoint because litellm is not installed.
 EVAL_MODEL = "openai/gpt-oss-120b"
 EVAL_BASE_URL = "https://api.groq.com/openai/v1"
+# Kept at 2 to respect Groq free-tier rate limits.
+EVAL_CONCURRENCY = int(os.getenv("EVAL_CONCURRENCY", "2"))
+BGE_RERANKER_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 
 
 GENERATION_LLM_TEMPERATURE = 0.1
@@ -114,8 +126,30 @@ LLM_SDK_MAX_RETRIES = 2
 
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
+UVICORN_RELOAD = _env_flag("UVICORN_RELOAD")
+# Comma-separated list in the environment, for example for a hosted frontend.
+CORS_ORIGINS = (
+    [o.strip() for o in os.environ["CORS_ORIGINS"].split(",") if o.strip()]
+    if os.getenv("CORS_ORIGINS")
+    else [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:7860",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:7860",
+    ]
+)
+
+GRADIO_HOST = os.getenv("GRADIO_HOST", "0.0.0.0")
+GRADIO_PORT = int(os.getenv("GRADIO_PORT", "7860"))
+# Where the Gradio frontend reaches the API.
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
+PHOENIX_ENABLED = _env_flag("PHOENIX_ENABLED")
 PHOENIX_HOST = os.getenv("PHOENIX_HOST", "localhost")
 PHOENIX_PORT = int(os.getenv("PHOENIX_PORT", "6006"))
 # Project that run.py registers traces under; the evals read it back.

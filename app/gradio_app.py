@@ -19,11 +19,15 @@ import uuid
 import gradio as gr
 import requests
 
-API_BASE_URL = "http://localhost:8000"
-QUERY_URL = f"{API_BASE_URL}/query"
-INGEST_URL = f"{API_BASE_URL}/ingest/trigger"
-STATUS_URL = f"{API_BASE_URL}/corpus/status"
+from src.core import config
+
+QUERY_URL = f"{config.API_BASE_URL}/query"
+INGEST_URL = f"{config.API_BASE_URL}/ingest/trigger"
+STATUS_URL = f"{config.API_BASE_URL}/corpus/status"
 REQUEST_TIMEOUT_SECONDS = 60
+
+ALL_COMPANIES = "All companies"
+NO_DEBUG_INFO = "No debug info yet."
 
 _TICKER_PALETTE = [
     ("#818cf8", "#312e81"),
@@ -383,11 +387,11 @@ def get_companies() -> list[str]:
     try:
         response = requests.get(STATUS_URL, timeout=REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 200:
-            return ["All companies"] + response.json().get("indexed_companies", [])
+            return [ALL_COMPANIES] + response.json().get("indexed_companies", [])
         gr.Warning(f"Backend returned HTTP {response.status_code} for corpus status.")
-    except Exception:
+    except (requests.RequestException, ValueError):
         gr.Warning("Could not reach backend to load company list; defaulting to 'All companies'.")
-    return ["All companies"]
+    return [ALL_COMPANIES]
 
 
 def trigger_ingestion() -> None:
@@ -398,7 +402,7 @@ def trigger_ingestion() -> None:
             gr.Info("Ingestion started.")
         else:
             gr.Warning(f"Failed to trigger ingestion (HTTP {response.status_code}).")
-    except Exception:
+    except (requests.RequestException, ValueError):
         gr.Warning("Could not reach backend ingestion endpoint.")
 
 
@@ -409,7 +413,7 @@ def clear_chat() -> tuple:
         A tuple of (empty_history, new_session_id, debug_placeholder,
         empty_citations_html, empty_banner_html).
     """
-    return [], str(uuid.uuid4()), "No debug info yet.", _EMPTY_CITATIONS, ""
+    return [], str(uuid.uuid4()), NO_DEBUG_INFO, _EMPTY_CITATIONS, ""
 
 
 def submit_query(
@@ -435,16 +439,16 @@ def submit_query(
         citations_html, legal_banner_html).
     """
     if not user_text:
-        return "", history, "No debug info yet.", _EMPTY_CITATIONS, ""
+        return "", history, NO_DEBUG_INFO, _EMPTY_CITATIONS, ""
 
     payload = {"query": user_text, "session_id": sess_id}
-    if comp_filter and comp_filter != "All companies":
+    if comp_filter and comp_filter != ALL_COMPANIES:
         payload["company_filter"] = comp_filter
 
     try:
         response = requests.post(QUERY_URL, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
     except requests.exceptions.RequestException:
-        error_msg = "Could not connect to the backend API at http://localhost:8000."
+        error_msg = f"Could not connect to the backend API at {config.API_BASE_URL}."
         history.append({"role": "user", "content": user_text})
         history.append({"role": "assistant", "content": f"**Error**: {error_msg}"})
         return "", history, "Error: Connection Failed", _EMPTY_CITATIONS, ""
@@ -505,60 +509,67 @@ def submit_query(
     return "", history, debug_md, citations_html, banner_html
 
 
-with gr.Blocks(title="SEC Filing RAG") as demo:
-    gr.Markdown("# SEC Filing RAG")
-    gr.Markdown("Frontend client for FastAPI backend")
+def build_demo() -> gr.Blocks:
+    """Build the Gradio UI.
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("### Session")
-            session_id = gr.Textbox(value=lambda: str(uuid.uuid4()), label="Session ID", interactive=False)
-            company_filter = gr.Dropdown(choices=get_companies(), value="All companies", label="Company Filter")
-            clear_btn = gr.Button("Clear Conversation")
-            ingest_btn = gr.Button("Trigger Ingestion")
+    Fetches the company list from the backend, so call it at launch time
+    rather than at import time.
 
-        with gr.Column(scale=3):
-            legal_banner = gr.HTML(value="")
+    Returns:
+        The assembled Gradio Blocks app.
+    """
+    with gr.Blocks(title="SEC Filing RAG") as demo:
+        gr.Markdown("# SEC Filing RAG")
+        gr.Markdown("Frontend client for FastAPI backend")
 
-            chatbot = gr.Chatbot(label="Conversation", height=500)
-            with gr.Row():
-                user_input = gr.Textbox(
-                    show_label=False,
-                    placeholder="Ask a compliance question...",
-                    scale=4,
-                )
-                submit_btn = gr.Button("Submit", scale=1)
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown("### Session")
+                session_id = gr.Textbox(value=lambda: str(uuid.uuid4()), label="Session ID", interactive=False)
+                company_filter = gr.Dropdown(choices=get_companies(), value=ALL_COMPANIES, label="Company Filter")
+                clear_btn = gr.Button("Clear Conversation")
+                ingest_btn = gr.Button("Trigger Ingestion")
 
-            citations_panel = gr.HTML(value=_EMPTY_CITATIONS, label="Sources")
+            with gr.Column(scale=3):
+                legal_banner = gr.HTML(value="")
 
-            with gr.Accordion(label="Show Debug Details", open=False):
-                debug_info = gr.Markdown("No debug info yet.")
+                chatbot = gr.Chatbot(label="Conversation", height=500)
+                with gr.Row():
+                    user_input = gr.Textbox(
+                        show_label=False,
+                        placeholder="Ask a compliance question...",
+                        scale=4,
+                    )
+                    submit_btn = gr.Button("Submit", scale=1)
 
-    user_input.submit(
-        submit_query,
-        inputs=[user_input, chatbot, session_id, company_filter],
-        outputs=[user_input, chatbot, debug_info, citations_panel, legal_banner],
-    )
-    submit_btn.click(
-        submit_query,
-        inputs=[user_input, chatbot, session_id, company_filter],
-        outputs=[user_input, chatbot, debug_info, citations_panel, legal_banner],
-    )
+                citations_panel = gr.HTML(value=_EMPTY_CITATIONS, label="Sources")
 
-    clear_btn.click(
-        clear_chat,
-        inputs=[],
-        outputs=[chatbot, session_id, debug_info, citations_panel, legal_banner],
-    )
+                with gr.Accordion(label="Show Debug Details", open=False):
+                    debug_info = gr.Markdown(NO_DEBUG_INFO)
 
-    ingest_btn.click(trigger_ingestion, inputs=[], outputs=[])
+        gr.on(
+            triggers=[user_input.submit, submit_btn.click],
+            fn=submit_query,
+            inputs=[user_input, chatbot, session_id, company_filter],
+            outputs=[user_input, chatbot, debug_info, citations_panel, legal_banner],
+        )
+
+        clear_btn.click(
+            clear_chat,
+            inputs=[],
+            outputs=[chatbot, session_id, debug_info, citations_panel, legal_banner],
+        )
+
+        ingest_btn.click(trigger_ingestion, inputs=[], outputs=[])
+
+    return demo
 
 
 def main() -> None:
-    """Launch the Gradio application on port 7860."""
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
+    """Launch the Gradio application on config.GRADIO_PORT."""
+    build_demo().launch(
+        server_name=config.GRADIO_HOST,
+        server_port=config.GRADIO_PORT,
         share=False,
         theme=gr.themes.Default(),
         head=_PANEL_STYLE,

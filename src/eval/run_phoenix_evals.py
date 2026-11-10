@@ -26,9 +26,12 @@ from phoenix.evals.utils import to_annotation_dataframe
 from phoenix.trace import suppress_tracing
 
 from src.core import config
+from src.core.logging import get_logger
 from src.eval.prompts import (
     ANSWER_RELEVANCE_TEMPLATE,
 )
+
+logger = get_logger(__name__)
 
 
 async def main_async() -> None:
@@ -38,28 +41,32 @@ async def main_async() -> None:
     the Phoenix project, runs an answer-relevance classification pass using
     config.EVAL_MODEL, and logs the scored annotations back to Phoenix.
 
-    Concurrency is limited to 2 to respect Groq free-tier rate limits.
+    Concurrency is limited by config.EVAL_CONCURRENCY to respect Groq
+    free-tier rate limits.
     Context relevance and faithfulness evaluations are omitted here because
     they require attributes.retrieval.documents to be populated on the CHAIN
     span, which depends on the instrumentation configuration.
     """
     base_url = f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}"
-    print(f"Connecting to Phoenix Client at {base_url}...")
+    logger.info("Connecting to Phoenix Client at %s...", base_url)
     px_client = Client(base_url=base_url)
 
-    print("Fetching traces...")
+    logger.info("Fetching traces...")
     df = px_client.spans.get_spans_dataframe(project_name=config.PHOENIX_PROJECT_NAME)
 
     if df.empty:
-        print(f"No traces found in the '{config.PHOENIX_PROJECT_NAME}' project. Run the app and generate traces first.")
+        logger.warning(
+            "No traces found in the '%s' project. Run the app and generate traces first.",
+            config.PHOENIX_PROJECT_NAME,
+        )
         return
 
     parent_spans = df[df["span_kind"] == "CHAIN"]
     if parent_spans.empty:
-        print("No CHAIN spans found. Unable to evaluate.")
+        logger.warning("No CHAIN spans found. Unable to evaluate.")
         return
 
-    print("Initializing Groq LLM Evaluator...")
+    logger.info("Initializing Groq LLM Evaluator...")
     llm = LLM(
         provider="openai",
         model=config.EVAL_MODEL,
@@ -67,7 +74,7 @@ async def main_async() -> None:
         api_key=os.environ["GROQ_API_KEY"],
     )
 
-    print("Setting up Evaluator for Answer Relevance...")
+    logger.info("Setting up Evaluator for Answer Relevance...")
     relevance_evaluator = ClassificationEvaluator(
         name="answer_relevance",
         prompt_template=ANSWER_RELEVANCE_TEMPLATE,
@@ -77,18 +84,18 @@ async def main_async() -> None:
 
     evaluators = [relevance_evaluator]
 
-    print("Running evaluations...")
+    logger.info("Running evaluations...")
     with suppress_tracing():
         results_df = await async_evaluate_dataframe(
             dataframe=parent_spans,
             evaluators=evaluators,
-            concurrency=2,
+            concurrency=config.EVAL_CONCURRENCY,
         )
 
-    print("Logging results to Phoenix...")
+    logger.info("Logging results to Phoenix...")
     evaluations = to_annotation_dataframe(dataframe=results_df)
     px_client.spans.log_span_annotations_dataframe(dataframe=evaluations)
-    print("Evaluation completed successfully.")
+    logger.info("Evaluation completed successfully.")
 
 
 def main() -> None:

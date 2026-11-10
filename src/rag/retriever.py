@@ -38,7 +38,7 @@ def _get_reranker() -> CrossEncoder:
     Returns:
         The initialized CrossEncoder instance.
     """
-    return CrossEncoder("BAAI/bge-reranker-v2-m3")
+    return CrossEncoder(config.BGE_RERANKER_MODEL_NAME)
 
 
 def _detect_regulation(query_text: str) -> str | None:
