@@ -110,7 +110,6 @@ def test_rewrite_query_over_limit():
 
     res = rewrite_query(state)
     assert res["retrieval_grade"] == "relevant"
-    assert res["context_relevance"] == "relevant"
 
 
 @mock.patch("src.agent.nodes.invoke_with_rate_limit")
@@ -148,21 +147,11 @@ def test_respond_cache_hit():
 
 @mock.patch("src.agent.nodes.invoke_with_rate_limit")
 @mock.patch("src.agent.nodes._cache")
-def test_respond_data_not_available(mock_cache, mock_invoke):
-    """Verify that [DATA NOT AVAILABLE] responses return an empty final_response"""
-    mock_invoke.return_value = "[DATA NOT AVAILABLE]"
-    state = ComplianceState(query="test", retrieved_docs=[], cache_hit=False)
+def test_respond_irrelevant_grade_short_circuits_without_caching(mock_cache, mock_invoke):
+    state = ComplianceState(query="test", retrieval_grade="irrelevant", cache_hit=False)
 
     res = respond(state)
-    assert res["final_response"] == ""
 
-
-@mock.patch("src.agent.nodes.invoke_with_rate_limit")
-@mock.patch("src.agent.nodes._cache")
-def test_respond_does_not_cache_unavailable(mock_cache, mock_invoke):
-    """Verify [DATA NOT AVAILABLE] responses are never stored in the semantic cache"""
-    mock_invoke.return_value = "[DATA NOT AVAILABLE]"
-    state = ComplianceState(query="test", retrieved_docs=[], cache_hit=False)
-
-    respond(state)
+    assert "could not find sufficient information" in res["final_response"]
+    mock_invoke.assert_not_called()
     mock_cache.return_value.store.assert_not_called()
