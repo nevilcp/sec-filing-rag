@@ -22,11 +22,11 @@ from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
 from src.core.llm_factory import (
-    get_output_guard_limiter_fn,
     get_output_guard_llm,
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
+from src.core.rate_limiter import get_output_guard_limiter
 from src.core.tracing import chain_span, set_span_output
 
 logger = get_logger(__name__)
@@ -117,7 +117,7 @@ def _is_definitive_legal_advice(text: str) -> bool:
         invoke_with_rate_limit(
             get_output_guard_llm(),
             prompt,
-            get_output_guard_limiter_fn(),
+            get_output_guard_limiter(),
         )
         .strip()
         .upper()

@@ -27,7 +27,6 @@ class ComplianceState(TypedDict):
     query: str
     # The user's text as submitted. `query` is replaced by CRAG rewrites.
     original_query: str
-    messages: list
     retrieved_docs: list[dict]
     retrieval_grade: Literal["relevant", "irrelevant"]
     rewrite_count: int
@@ -42,5 +41,4 @@ class ComplianceState(TypedDict):
         "general",
     ]
     context_relevance: Literal["relevant", "irrelevant"] | None
-    tool_calls_made: int
     company_filter: str | None

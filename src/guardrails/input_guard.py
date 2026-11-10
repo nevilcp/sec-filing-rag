@@ -20,11 +20,11 @@ from presidio_analyzer import AnalyzerEngine
 
 from src.core import config
 from src.core.llm_factory import (
-    get_input_guard_limiter_fn,
     get_input_guard_llm,
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
+from src.core.rate_limiter import get_input_guard_limiter
 from src.core.tracing import chain_span, set_span_output
 
 logger = get_logger(__name__)
@@ -73,7 +73,7 @@ def _is_prompt_injection(query: str) -> bool:
         invoke_with_rate_limit(
             get_input_guard_llm(),
             query,
-            get_input_guard_limiter_fn(),
+            get_input_guard_limiter(),
         )
         .strip()
         .lower()

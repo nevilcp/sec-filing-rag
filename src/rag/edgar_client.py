@@ -208,39 +208,6 @@ def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) 
     return results
 
 
-def get_filing_index(cik: str, accession_number: str) -> list[dict]:
-    """Fetches the JSON index for a specific filing.
-
-    Args:
-        cik: The company's Central Index Key.
-        accession_number: The filing's unique identifier.
-
-    Returns:
-        A list of metadata dictionaries describing each file in the index
-    """
-    accession_clean = accession_number.replace("-", "")
-    cik_clean = cik.lstrip("0")
-
-    base_url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{accession_clean}"
-    url = f"{base_url}/{accession_clean}-index.json"
-
-    data = _edgar_get_json(url)
-    items = data.get("directory", {}).get("item", [])
-
-    results = []
-    for item in items:
-        file_url = f"{base_url}/{item.get('name')}"
-        results.append(
-            {
-                "name": item.get("name"),
-                "type": item.get("type"),
-                "description": item.get("description"),
-                "url": file_url,
-            }
-        )
-    return results
-
-
 def download_primary_document(cik: str, accession_number: str, filename: str) -> str:
     """Download the raw HTML content of a filing's primary document.
 
