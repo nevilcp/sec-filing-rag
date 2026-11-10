@@ -152,7 +152,7 @@ def validate_output(response: str) -> tuple[str, list[str]]:
                 extra={"extra": {"entities": detected_types}},
             )
 
-        if _is_definitive_legal_advice(response):
+        if _is_definitive_legal_advice(sanitized):
             warnings.append(
                 "Potential definitive legal advice detected; response should be treated as informational only."
             )

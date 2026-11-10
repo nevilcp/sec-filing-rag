@@ -242,7 +242,7 @@ def build_citations_html(sources: list[dict]) -> str:
         period = html.escape(s.get("period_of_report", "—"))
 
         text_col, bg_col = _ticker_colours(ticker, seen_tickers)
-        edgar_href = _edgar_url(accession) if accession else "#"
+        edgar_href = html.escape(_edgar_url(accession), quote=True) if accession else "#"
 
         cards_html += f"""
         <div class="citation-card">

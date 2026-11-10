@@ -18,6 +18,7 @@ from __future__ import annotations
 from opentelemetry.trace import Status, StatusCode
 from presidio_analyzer import AnalyzerEngine
 
+from src.core import config
 from src.core.llm_factory import (
     get_input_guard_limiter_fn,
     get_input_guard_llm,
@@ -66,7 +67,7 @@ def _is_prompt_injection(query: str) -> bool:
         query: Raw user input text.
 
     Returns:
-        True if classified as 'unsafe' (injection/jailbreak), False otherwise
+        True if the injection score reaches the configured threshold.
     """
     result = (
         invoke_with_rate_limit(
@@ -78,7 +79,11 @@ def _is_prompt_injection(query: str) -> bool:
         .lower()
     )
 
-    return "unsafe" in result
+    try:
+        return float(result) >= config.INPUT_GUARD_INJECTION_THRESHOLD
+    except ValueError:
+        # Not a score: accept a textual verdict from a different classifier.
+        return "unsafe" in result or "malicious" in result
 
 
 def validate_input(query: str) -> tuple[bool, str]:

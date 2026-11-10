@@ -47,6 +47,8 @@ LOG_ROTATION_BACKUP_COUNT = 14
 
 INPUT_GUARD_MODEL = "meta-llama/llama-prompt-guard-2-86m"
 OUTPUT_GUARD_MODEL = "openai/gpt-oss-safeguard-20b"
+# Prompt Guard 2 returns a probability; scores at or above this block.
+INPUT_GUARD_INJECTION_THRESHOLD = 0.5
 ROUTER_MODEL = "openai/gpt-oss-20b"
 # Grader and rewriter use a different model from the router so each
 # role gets its own Groq per-model TPM budget on the free tier
