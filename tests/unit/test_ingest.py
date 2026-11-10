@@ -13,7 +13,12 @@ Responsibilities:
 from __future__ import annotations
 
 import json
+from unittest import mock
 
+import pytest
+
+from src.core import config
+from src.rag import ingest
 from src.rag.ingest import _iter_sub_batches, _load_checkpoint, _save_checkpoint
 
 
@@ -82,3 +87,60 @@ def test_iter_sub_batches_empty():
 
 def test_iter_sub_batches_single_item():
     assert _iter_sub_batches([42], 5) == [[42]]
+
+
+def test_save_checkpoint_interrupted_write_keeps_previous_file(tmp_path):
+    path = tmp_path / "checkpoint.json"
+    _save_checkpoint(path, {"date": "2024-01-01", "processed_files": ["a"], "indexed_companies": []})
+
+    with mock.patch("src.core.fileio.os.replace", side_effect=KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            _save_checkpoint(path, {"date": "2024-01-01", "processed_files": ["a", "b"], "indexed_companies": []})
+
+    assert _load_checkpoint(path)["processed_files"] == ["a"]
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def _run_ingestion_with_two_batches(tmp_path, monkeypatch, embed_side_effect):
+    """Run ingestion for one filing that splits into two embedding batches."""
+    checkpoint_path = tmp_path / "checkpoint.json"
+    html_path = tmp_path / "filing.html"
+    html_path.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(config, "INGEST_CHECKPOINT_PATH", str(checkpoint_path))
+    monkeypatch.setattr(config, "EMBEDDING_BATCH_SIZE", 1)
+    sections = {"business_overview": "First paragraph.\n\n" + "x" * config.CHUNK_SIZE}
+    filing = {"accession_number": "0000000000-24-000001", "primary_document": "a.htm", "form_type": "10-K"}
+
+    monkeypatch.setattr(ingest, "get_corpus_companies", lambda: [{"ticker": "AAPL", "company_name": "Apple"}])
+    monkeypatch.setattr(ingest, "resolve_cik", lambda ticker: "0000320193")
+    monkeypatch.setattr(ingest, "embed_documents", embed_side_effect)
+    monkeypatch.setattr(ingest, "upsert_chunks", mock.Mock())
+    monkeypatch.setattr(ingest, "get_qdrant_client", lambda: mock.Mock(scroll=lambda **kw: ([], None)))
+    monkeypatch.setattr(ingest, "get_filings_collection", lambda: None)
+    monkeypatch.setattr(ingest.edgar_client, "get_recent_filings", lambda *a, **kw: [filing])
+    monkeypatch.setattr(ingest.edgar_client, "stage_filing", lambda **kw: html_path)
+    monkeypatch.setattr(ingest.section_extractor, "extract_sections", lambda html: sections)
+
+    ingest.run_ingestion()
+    return json.loads(checkpoint_path.read_text(encoding="utf-8"))
+
+
+def test_run_ingestion_failed_embedding_batch_leaves_filing_unprocessed(tmp_path, monkeypatch):
+    calls = {"n": 0}
+
+    def flaky_embed(texts):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("embedding backend down")
+        return [[0.0] for _ in texts]
+
+    checkpoint = _run_ingestion_with_two_batches(tmp_path, monkeypatch, flaky_embed)
+
+    assert calls["n"] >= 2
+    assert checkpoint["processed_files"] == []
+
+
+def test_run_ingestion_all_batches_embedded_marks_filing_processed(tmp_path, monkeypatch):
+    checkpoint = _run_ingestion_with_two_batches(tmp_path, monkeypatch, lambda texts: [[0.0] for _ in texts])
+
+    assert checkpoint["processed_files"] == ["0000000000-24-000001"]
