@@ -31,17 +31,11 @@ from tenacity import (
 )
 
 from src.core import config
+from src.core.lazy import locked_singleton
 from src.core.rate_limiter import (
     _SlidingWindowRateLimiter,
     estimate_llm_tokens,
 )
-
-_INPUT_GUARD_LLM: BaseChatModel | None = None
-_OUTPUT_GUARD_LLM: BaseChatModel | None = None
-_ROUTER_LLM: BaseChatModel | None = None
-_GRADER_LLM: BaseChatModel | None = None
-_REWRITER_LLM: BaseChatModel | None = None
-_GENERATION_LLM: BaseChatModel | None = None
 
 _RATE_LIMIT_ERROR_MARKERS: Final[tuple[str, ...]] = (
     "rate limit",
@@ -261,6 +255,7 @@ def invoke_with_rate_limit(
     return _extract_content_str(response.content)
 
 
+@locked_singleton
 def get_input_guard_llm() -> ChatGroq:
     """Return the singleton PromptGuard-2-86M injection/jailbreak classifier.
 
@@ -270,16 +265,14 @@ def get_input_guard_llm() -> ChatGroq:
     Returns:
         The cached ChatGroq instance for the InputGuard node.
     """
-    global _INPUT_GUARD_LLM
-    if _INPUT_GUARD_LLM is None:
-        _INPUT_GUARD_LLM = _build_groq_llm(
-            _require_groq_api_key(),
-            config.INPUT_GUARD_MODEL,
-            0.0,
-        )
-    return _INPUT_GUARD_LLM
+    return _build_groq_llm(
+        _require_groq_api_key(),
+        config.INPUT_GUARD_MODEL,
+        0.0,
+    )
 
 
+@locked_singleton
 def get_output_guard_llm() -> ChatGroq:
     """Return the singleton GPT-OSS-Safeguard-20B output policy classifier.
 
@@ -288,16 +281,14 @@ def get_output_guard_llm() -> ChatGroq:
     Returns:
         The cached ChatGroq instance for the OutputGuard node.
     """
-    global _OUTPUT_GUARD_LLM
-    if _OUTPUT_GUARD_LLM is None:
-        _OUTPUT_GUARD_LLM = _build_groq_llm(
-            _require_groq_api_key(),
-            config.OUTPUT_GUARD_MODEL,
-            0.0,
-        )
-    return _OUTPUT_GUARD_LLM
+    return _build_groq_llm(
+        _require_groq_api_key(),
+        config.OUTPUT_GUARD_MODEL,
+        0.0,
+    )
 
 
+@locked_singleton
 def get_router_llm() -> ChatGroq:
     """Return the singleton router LLM (config.ROUTER_MODEL).
 
@@ -308,61 +299,52 @@ def get_router_llm() -> ChatGroq:
     Returns:
         The cached ChatGroq instance for the Router node.
     """
-    global _ROUTER_LLM
-    if _ROUTER_LLM is None:
-        _ROUTER_LLM = _build_groq_llm(
-            _require_groq_api_key(),
-            config.ROUTER_MODEL,
-            config.ROUTING_LLM_TEMPERATURE,
-            reasoning_effort="low",
-            reasoning_format="hidden",
-        )
-    return _ROUTER_LLM
+    return _build_groq_llm(
+        _require_groq_api_key(),
+        config.ROUTER_MODEL,
+        config.ROUTING_LLM_TEMPERATURE,
+        reasoning_effort="low",
+        reasoning_format="hidden",
+    )
 
 
+@locked_singleton
 def get_grader_llm() -> ChatGroq:
     """Return the singleton relevance grader LLM (config.GRADER_MODEL).
 
     Returns:
         The cached ChatGroq instance for the Grader node.
     """
-    global _GRADER_LLM
-    if _GRADER_LLM is None:
-        _GRADER_LLM = _build_groq_llm(
-            _require_groq_api_key(),
-            config.GRADER_MODEL,
-            config.GRADER_LLM_TEMPERATURE,
-        )
-    return _GRADER_LLM
+    return _build_groq_llm(
+        _require_groq_api_key(),
+        config.GRADER_MODEL,
+        config.GRADER_LLM_TEMPERATURE,
+    )
 
 
+@locked_singleton
 def get_rewriter_llm() -> ChatGroq:
     """Return the singleton CRAG rewriter LLM (config.REWRITER_MODEL).
 
     Returns:
         The cached ChatGroq instance for the Rewriter node.
     """
-    global _REWRITER_LLM
-    if _REWRITER_LLM is None:
-        _REWRITER_LLM = _build_groq_llm(
-            _require_groq_api_key(),
-            config.REWRITER_MODEL,
-            config.REWRITER_LLM_TEMPERATURE,
-        )
-    return _REWRITER_LLM
+    return _build_groq_llm(
+        _require_groq_api_key(),
+        config.REWRITER_MODEL,
+        config.REWRITER_LLM_TEMPERATURE,
+    )
 
 
+@locked_singleton
 def get_generation_llm() -> BaseChatModel:
     """Return the singleton Gemini generation LLM for final answer synthesis.
 
     Returns:
         The cached BaseChatModel instance for the Generation node.
     """
-    global _GENERATION_LLM
-    if _GENERATION_LLM is None:
-        _GENERATION_LLM = _build_gemini_llm(
-            _require_gemini_api_key(),
-            config.GENERATION_MODEL,
-            config.GENERATION_LLM_TEMPERATURE,
-        )
-    return _GENERATION_LLM
+    return _build_gemini_llm(
+        _require_gemini_api_key(),
+        config.GENERATION_MODEL,
+        config.GENERATION_LLM_TEMPERATURE,
+    )
