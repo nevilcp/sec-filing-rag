@@ -20,10 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-except ModuleNotFoundError:
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core import config
 from src.core.corpus import get_corpus_companies, resolve_cik

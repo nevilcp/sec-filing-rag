@@ -11,7 +11,6 @@ Responsibilities:
 
 Dependencies:
   - langchain_core
-  - opentelemetry
 """
 
 from __future__ import annotations
@@ -20,26 +19,19 @@ import json
 import string
 from typing import Any
 
-from opentelemetry import trace
-
 from src.agent.state import ComplianceState
 from src.core import config
 from src.core.llm_factory import (
-    get_generation_limiter_fn,
     get_generation_llm,
-    get_grader_limiter_fn,
     get_grader_llm,
-    get_rewriter_limiter_fn,
     get_rewriter_llm,
-    get_router_limiter_fn,
     get_router_llm,
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
+from src.core.rate_limiter import get_generation_limiter, get_router_limiter, get_workhorse_limiter
 from src.rag.cache import SemanticCache
 from src.rag.retriever import retrieve
-
-tracer = trace.get_tracer(__name__)
 
 logger = get_logger(__name__)
 _CACHE: SemanticCache | None = None
@@ -155,7 +147,7 @@ def process_input(state: ComplianceState) -> dict[str, Any]:
     content = invoke_with_rate_limit(
         get_router_llm(),
         prompt,
-        get_router_limiter_fn(),
+        get_router_limiter(),
     ).strip()
 
     category = "general"
@@ -257,7 +249,7 @@ def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
         result = invoke_with_rate_limit(
             get_grader_llm(),
             prompt,
-            get_grader_limiter_fn(),
+            get_workhorse_limiter(),
         )
         words = result.strip().lower().split()
         verdict = words[0].strip(string.punctuation) if words else ""
@@ -281,7 +273,6 @@ def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
     return {
         "retrieved_docs": docs,
         "context_relevance": context_relevance,
-        "tool_calls_made": int(state.get("tool_calls_made", 0)) + 1,
     }
 
 
@@ -342,7 +333,7 @@ def rewrite_query(state: ComplianceState) -> dict[str, Any]:
     rewritten_query = invoke_with_rate_limit(
         get_rewriter_llm(),
         prompt,
-        get_rewriter_limiter_fn(),
+        get_workhorse_limiter(),
     ).strip()
     logger.info(
         "rewrite_query complete",
@@ -438,7 +429,7 @@ def respond(state: ComplianceState) -> dict[str, Any]:
     response_text = invoke_with_rate_limit(
         get_generation_llm(),
         prompt,
-        get_generation_limiter_fn(),
+        get_generation_limiter(),
     )
 
     sources_text = ""

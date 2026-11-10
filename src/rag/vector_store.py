@@ -97,8 +97,6 @@ def dense_search(
     query_text: str,
     top_k: int,
     filter_ticker: str | None = None,
-    filter_section: str | None = None,
-    filter_form_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """Runs dense vector search in Qdrant and returns normalized result dicts.
 
@@ -106,8 +104,6 @@ def dense_search(
         query_text: The user's query.
         top_k: Maximum number of results to return.
         filter_ticker: Optional metadata filter for ticker.
-        filter_section: Optional metadata filter for section name.
-        filter_form_type: Optional metadata filter for form type.
 
     Returns:
         A list of search results containing text, score, and metadata
@@ -125,21 +121,6 @@ def dense_search(
                 match=models.MatchValue(value=filter_ticker),
             )
         )
-    if filter_section:
-        must_conditions.append(
-            models.FieldCondition(
-                key="section_name",
-                match=models.MatchValue(value=filter_section),
-            )
-        )
-    if filter_form_type:
-        must_conditions.append(
-            models.FieldCondition(
-                key="form_type",
-                match=models.MatchValue(value=filter_form_type),
-            )
-        )
-
     query_filter = models.Filter(must=must_conditions) if must_conditions else None
 
     search_result = client.query_points(

@@ -24,9 +24,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ["CHROMA_TELEMETRY"] = "false"
-os.environ["ANONYMIZED_TELEMETRY"] = "False"
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"

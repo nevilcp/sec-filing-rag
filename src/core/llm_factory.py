@@ -34,11 +34,6 @@ from src.core import config
 from src.core.rate_limiter import (
     _SlidingWindowRateLimiter,
     estimate_llm_tokens,
-    get_generation_limiter,
-    get_input_guard_limiter,
-    get_output_guard_limiter,
-    get_router_limiter,
-    get_workhorse_limiter,
 )
 
 _INPUT_GUARD_LLM: BaseChatModel | None = None
@@ -285,11 +280,6 @@ def get_input_guard_llm() -> ChatGroq:
     return _INPUT_GUARD_LLM
 
 
-def get_input_guard_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the singleton rate limiter for the InputGuard model."""
-    return get_input_guard_limiter()
-
-
 def get_output_guard_llm() -> ChatGroq:
     """Return the singleton GPT-OSS-Safeguard-20B output policy classifier.
 
@@ -306,11 +296,6 @@ def get_output_guard_llm() -> ChatGroq:
             0.0,
         )
     return _OUTPUT_GUARD_LLM
-
-
-def get_output_guard_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the singleton rate limiter for the OutputGuard model."""
-    return get_output_guard_limiter()
 
 
 def get_router_llm() -> ChatGroq:
@@ -335,11 +320,6 @@ def get_router_llm() -> ChatGroq:
     return _ROUTER_LLM
 
 
-def get_router_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the singleton rate limiter for the Router model."""
-    return get_router_limiter()
-
-
 def get_grader_llm() -> ChatGroq:
     """Return the singleton relevance grader LLM (config.GRADER_MODEL).
 
@@ -354,11 +334,6 @@ def get_grader_llm() -> ChatGroq:
             config.GRADER_LLM_TEMPERATURE,
         )
     return _GRADER_LLM
-
-
-def get_grader_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the shared rate limiter for the Grader/Rewriter model pair."""
-    return get_workhorse_limiter()
 
 
 def get_rewriter_llm() -> ChatGroq:
@@ -377,11 +352,6 @@ def get_rewriter_llm() -> ChatGroq:
     return _REWRITER_LLM
 
 
-def get_rewriter_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the shared rate limiter for the Rewriter/Grader model pair."""
-    return get_workhorse_limiter()
-
-
 def get_generation_llm() -> BaseChatModel:
     """Return the singleton Gemini generation LLM for final answer synthesis.
 
@@ -396,8 +366,3 @@ def get_generation_llm() -> BaseChatModel:
             config.GENERATION_LLM_TEMPERATURE,
         )
     return _GENERATION_LLM
-
-
-def get_generation_limiter_fn() -> _SlidingWindowRateLimiter:
-    """Return the singleton rate limiter for the Generation model."""
-    return get_generation_limiter()
