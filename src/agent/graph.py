@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.agent.nodes import (
     cache_check,
@@ -34,7 +35,7 @@ from src.agent.router import route_after_cache_check, route_after_grade_retrieva
 from src.agent.state import ComplianceState
 
 
-def compile_graph():
+def compile_graph() -> CompiledStateGraph:
     """Compile the executable LangGraph state machine for the CRAG workflow.
 
     Returns:

@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from opentelemetry.trace import Status, StatusCode
 
+from src.agent.state import RetrievedDoc, _doc_meta
 from src.api.schemas import QueryRequest, QueryResponse, SourceCitation
 from src.core import config
 from src.core.logging import get_audit_logger, get_logger, get_rag_logger
@@ -50,6 +51,49 @@ def _run_ingestion_background() -> None:
     except Exception:
         logger.exception("Background ingestion failed")
         raise
+
+
+def _build_initial_state(payload: QueryRequest) -> dict[str, Any]:
+    """Return the starting graph state for a query request."""
+    return {
+        "query": payload.query,
+        "original_query": payload.query,
+        "retrieved_docs": [],
+        "retrieval_grade": "irrelevant",
+        "rewrite_count": 0,
+        "final_response": "",
+        "cache_hit": False,
+        "query_category": "general",
+        "company_filter": payload.company_filter,
+    }
+
+
+def _to_citations(docs: list[RetrievedDoc]) -> list[SourceCitation]:
+    """Convert retrieved chunks into API source citations."""
+    citations = []
+    for doc in docs:
+        meta = _doc_meta(doc)
+        citations.append(
+            SourceCitation(
+                ticker=meta.get("ticker", ""),
+                company_name=meta.get("company_name", ""),
+                form_type=meta.get("form_type", ""),
+                filing_date=meta.get("filing_date", ""),
+                period_of_report=meta.get("period_of_report", ""),
+                section_name=meta.get("section_name", ""),
+                accession_number=meta.get("accession_number", ""),
+                chunk_text=doc.get("text", ""),
+            )
+        )
+    return citations
+
+
+def _record_metrics(metrics: dict[str, int], cache_hit: bool, rewrite_count: int) -> None:
+    """Add one served query to the process-wide counters."""
+    metrics["total_queries_served"] += 1
+    if cache_hit:
+        metrics["cache_hits"] += 1
+    metrics["rewrite_count_total"] += rewrite_count
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -84,17 +128,7 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
 
         graph = request.app.state.graph
         result = graph.invoke(
-            {
-                "query": payload.query,
-                "original_query": payload.query,
-                "retrieved_docs": [],
-                "retrieval_grade": "irrelevant",
-                "rewrite_count": 0,
-                "final_response": "",
-                "cache_hit": False,
-                "query_category": "general",
-                "company_filter": payload.company_filter,
-            },
+            _build_initial_state(payload),
             config={"configurable": {"thread_id": payload.session_id}},
         )
 
@@ -105,55 +139,37 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
             extra={"extra": {"warnings": warnings, "session_id": payload.session_id}},
         )
 
-        metrics = request.app.state.metrics
-        metrics["total_queries_served"] += 1
         cache_hit = bool(result.get("cache_hit", False))
-        if cache_hit:
-            metrics["cache_hits"] += 1
         rewrite_count = int(result.get("rewrite_count", 0))
-        metrics["rewrite_count_total"] += rewrite_count
+        query_category = str(result.get("query_category", "general"))
+        retrieval_grade = str(result.get("retrieval_grade", "irrelevant"))
+        docs = result.get("retrieved_docs", [])
 
+        _record_metrics(request.app.state.metrics, cache_hit, rewrite_count)
         _rag_log.info(
             "query_complete",
             extra={
                 "extra": {
                     "session_id": payload.session_id,
-                    "query_category": result.get("query_category", "general"),
+                    "query_category": query_category,
                     "cache_hit": cache_hit,
-                    "retrieval_grade": result.get("retrieval_grade", "irrelevant"),
-                    "retrieved_doc_count": len(result.get("retrieved_docs", [])),
+                    "retrieval_grade": retrieval_grade,
+                    "retrieved_doc_count": len(docs),
                     "rewrite_count": rewrite_count,
                     "warnings": warnings,
                 }
             },
         )
 
-        docs = result.get("retrieved_docs", [])
-        sources_list = []
-        for doc in docs:
-            meta = doc.get("metadata", {})
-            sources_list.append(
-                SourceCitation(
-                    ticker=meta.get("ticker", ""),
-                    company_name=meta.get("company_name", ""),
-                    form_type=meta.get("form_type", ""),
-                    filing_date=meta.get("filing_date", ""),
-                    period_of_report=meta.get("period_of_report", ""),
-                    section_name=meta.get("section_name", ""),
-                    accession_number=meta.get("accession_number", ""),
-                    chunk_text=doc.get("text", ""),
-                )
-            )
-
         response = QueryResponse(
             response=sanitized_response,
-            cache_hit=bool(result.get("cache_hit", False)),
-            query_category=str(result.get("query_category", "general")),
+            cache_hit=cache_hit,
+            query_category=query_category,
             retrieved_doc_count=len(docs),
-            retrieval_grade=str(result.get("retrieval_grade", "irrelevant")),
-            rewrite_count=int(result.get("rewrite_count", 0)),
+            retrieval_grade=retrieval_grade,
+            rewrite_count=rewrite_count,
             warnings=warnings,
-            sources=sources_list,
+            sources=_to_citations(docs),
         )
         set_span_output(span, sanitized_response)
         span.set_status(Status(StatusCode.OK))

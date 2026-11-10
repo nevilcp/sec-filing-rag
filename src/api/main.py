@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -71,7 +72,7 @@ class _AccessLogMiddleware(BaseHTTPMiddleware):
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle.
 
     On startup: initializes the Qdrant filings collection and compiles the

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from src.agent.state import QueryCategory
+
 
 class SourceCitation(BaseModel):
     """A single document passage retrieved to support a generated answer.
@@ -54,7 +56,7 @@ class QueryResponse(BaseModel):
 
     response: str
     cache_hit: bool
-    query_category: str
+    query_category: QueryCategory
     retrieved_doc_count: int
     retrieval_grade: str
     rewrite_count: int

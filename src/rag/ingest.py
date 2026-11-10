@@ -102,6 +102,100 @@ def _iter_sub_batches(items: list[Any], size: int) -> list[list[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+def _build_filing_queue(
+    tickers: list[str] | None, processed_files: set[str]
+) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """List unprocessed filings as (ticker, cik, company_name, filing) tuples.
+
+    Args:
+        tickers: Optional ticker symbols to restrict the corpus to.
+        processed_files: Accession numbers already recorded in the checkpoint.
+    """
+    companies = get_corpus_companies()
+    if tickers:
+        lower_tickers = {t.lower() for t in tickers}
+        companies = [c for c in companies if c.get("ticker", "").lower() in lower_tickers]
+
+    resolved_companies: list[dict[str, Any]] = []
+    for comp in companies:
+        cik = resolve_cik(comp["ticker"])
+        if cik:
+            resolved_companies.append({**comp, "cik": cik})
+
+    filing_queue: list[tuple[str, str, str, dict[str, Any]]] = []
+    for comp in resolved_companies:
+        filings = edgar_client.get_recent_filings(
+            comp["cik"], form_type="10-K", max_results=len(config.EDGAR_FISCAL_YEARS)
+        )
+        for filing in filings:
+            if filing["accession_number"] not in processed_files:
+                filing_queue.append((comp["ticker"], comp["cik"], comp.get("company_name", ""), filing))
+    return filing_queue
+
+
+def _embed_batches(chunks: list[dict[str, Any]], ticker: str) -> None:
+    """Embed chunks in batches, setting an 'embedding' key on each success.
+
+    A batch that fails to embed is logged and skipped, leaving its chunks
+    without an embedding.
+
+    Args:
+        chunks: The chunk dicts to embed, modified in place.
+        ticker: The company ticker, used for log context.
+    """
+    batches = _iter_sub_batches(chunks, config.EMBEDDING_BATCH_SIZE)
+    total_batches = len(batches)
+
+    for batch_num, batch in enumerate(batches, 1):
+        logger.debug("Embedding batch %d/%d", batch_num, total_batches)
+        texts = [chunk["text"] for chunk in batch]
+        try:
+            embeddings = embed_documents(texts)
+        except Exception:
+            logger.exception(
+                "Embedding failed for batch %d/%d (%s). Skipping batch.",
+                batch_num,
+                total_batches,
+                ticker,
+            )
+            continue
+
+        if len(embeddings) != len(batch):
+            logger.warning(
+                "Batch %d/%d: expected %d embeddings, got %d. Skipping.",
+                batch_num,
+                total_batches,
+                len(batch),
+                len(embeddings),
+            )
+            continue
+
+        for i, chunk in enumerate(batch):
+            chunk["embedding"] = embeddings[i]
+
+
+def _load_all_documents() -> list[dict[str, Any]]:
+    """Read every stored chunk back from Qdrant as text and metadata."""
+    client = get_qdrant_client()
+    get_filings_collection()
+    all_docs: list[dict[str, Any]] = []
+    offset = None
+    while True:
+        records, offset = client.scroll(
+            collection_name=config.QDRANT_COLLECTION_NAME,
+            limit=100,
+            with_payload=True,
+            offset=offset,
+        )
+        for record in records:
+            payload = dict(record.payload) if record.payload else {}
+            text = payload.pop("text", "")
+            all_docs.append({"text": text, "metadata": payload})
+        if offset is None:
+            break
+    return all_docs
+
+
 def run_ingestion(tickers: list[str] | None = None) -> int:
     """Execute the end-to-end EDGAR ingestion pipeline.
 
@@ -124,26 +218,7 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
 
     processed_files = set(checkpoint["processed_files"])
 
-    companies = get_corpus_companies()
-    if tickers:
-        lower_tickers = {t.lower() for t in tickers}
-        companies = [c for c in companies if c.get("ticker", "").lower() in lower_tickers]
-
-    resolved_companies = []
-    for comp in companies:
-        cik = resolve_cik(comp["ticker"])
-        if cik:
-            resolved_companies.append({**comp, "cik": cik})
-
-    filing_queue = []
-    for comp in resolved_companies:
-        filings = edgar_client.get_recent_filings(
-            comp["cik"], form_type="10-K", max_results=len(config.EDGAR_FISCAL_YEARS)
-        )
-        for filing in filings:
-            if filing["accession_number"] not in processed_files:
-                filing_queue.append((comp["ticker"], comp["cik"], comp.get("company_name", ""), filing))
-
+    filing_queue = _build_filing_queue(tickers, processed_files)
     if not filing_queue:
         logger.info("No new filings to process.")
         return 0
@@ -172,7 +247,7 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
         if not sections:
             continue
 
-        chunks = []
+        chunks: list[dict[str, Any]] = []
         chunk_index = 0
         for section_name, section_text in sections.items():
             text_chunks = splitter.split_text(section_text)
@@ -203,35 +278,7 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
         if not chunks:
             continue
 
-        batches = _iter_sub_batches(chunks, config.EMBEDDING_BATCH_SIZE)
-        total_batches = len(batches)
-
-        for batch_num, batch in enumerate(batches, 1):
-            logger.debug("Embedding batch %d/%d", batch_num, total_batches)
-            texts = [chunk["text"] for chunk in batch]
-            try:
-                embeddings = embed_documents(texts)
-            except Exception:
-                logger.exception(
-                    "Embedding failed for batch %d/%d (%s). Skipping batch.",
-                    batch_num,
-                    total_batches,
-                    ticker,
-                )
-                continue
-
-            if len(embeddings) != len(batch):
-                logger.warning(
-                    "Batch %d/%d: expected %d embeddings, got %d. Skipping.",
-                    batch_num,
-                    total_batches,
-                    len(batch),
-                    len(embeddings),
-                )
-                continue
-
-            for i, chunk in enumerate(batch):
-                chunk["embedding"] = embeddings[i]
+        _embed_batches(chunks, ticker)
 
         valid_chunks = [c for c in chunks if c.get("embedding") is not None]
         if valid_chunks:
@@ -252,23 +299,7 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
             checkpoint["indexed_companies"].append(ticker)
         _save_checkpoint(checkpoint_path, checkpoint)
 
-    client = get_qdrant_client()
-    get_filings_collection()
-    all_docs: list[dict] = []
-    offset = None
-    while True:
-        records, offset = client.scroll(
-            collection_name=config.QDRANT_COLLECTION_NAME,
-            limit=100,
-            with_payload=True,
-            offset=offset,
-        )
-        for record in records:
-            payload = dict(record.payload) if record.payload else {}
-            text = payload.pop("text", "")
-            all_docs.append({"text": text, "metadata": payload})
-        if offset is None:
-            break
+    all_docs = _load_all_documents()
 
     if all_docs:
         bm25_index.build_bm25_index(all_docs)
