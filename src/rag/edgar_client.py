@@ -18,6 +18,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -100,7 +101,7 @@ def _edgar_get(url: str) -> httpx.Response:
         return response
 
 
-def _edgar_get_json(url: str) -> dict:
+def _edgar_get_json(url: str) -> dict[str, Any]:
     """Fetch a JSON document from an EDGAR endpoint and parse it.
 
     Args:
@@ -124,7 +125,7 @@ def _edgar_get_text(url: str) -> str:
     return _edgar_get(url).text
 
 
-def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) -> list[dict]:
+def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) -> list[dict[str, Any]]:
     """Queries the submissions endpoint for recent filings matching the target fiscal years.
 
     Filters results by ``config.EDGAR_FISCAL_YEARS``, comparing against the
@@ -153,7 +154,7 @@ def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) 
     forms = filings.get("form", [])
     primary_documents = filings.get("primaryDocument", [])
 
-    results = []
+    results: list[dict[str, Any]] = []
     for i in range(len(accession_numbers)):
         if forms[i] != form_type:
             continue
