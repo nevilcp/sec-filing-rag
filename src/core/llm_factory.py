@@ -314,11 +314,11 @@ def get_output_guard_limiter_fn() -> _SlidingWindowRateLimiter:
 
 
 def get_router_llm() -> ChatGroq:
-    """Return the singleton Qwen3-32B router LLM.
+    """Return the singleton router LLM (config.ROUTER_MODEL).
 
-    Reasoning is disabled (effort='none', format='hidden') to prevent
-    chain-of-thought tokens from leaking into the JSON classification
-    output and breaking the parser.
+    gpt-oss models cannot disable reasoning, so effort is set to 'low'
+    to keep latency down, and format 'hidden' keeps chain-of-thought
+    out of the JSON classification output the parser reads.
 
     Returns:
         The cached ChatGroq instance for the Router node.
@@ -329,7 +329,7 @@ def get_router_llm() -> ChatGroq:
             _require_groq_api_key(),
             config.ROUTER_MODEL,
             config.ROUTING_LLM_TEMPERATURE,
-            reasoning_effort="none",
+            reasoning_effort="low",
             reasoning_format="hidden",
         )
     return _ROUTER_LLM
@@ -341,7 +341,7 @@ def get_router_limiter_fn() -> _SlidingWindowRateLimiter:
 
 
 def get_grader_llm() -> ChatGroq:
-    """Return the singleton Llama-3.1-8B-Instant relevance grader LLM.
+    """Return the singleton relevance grader LLM (config.GRADER_MODEL).
 
     Returns:
         The cached ChatGroq instance for the Grader node.
@@ -362,7 +362,7 @@ def get_grader_limiter_fn() -> _SlidingWindowRateLimiter:
 
 
 def get_rewriter_llm() -> ChatGroq:
-    """Return the singleton Llama-3.1-8B-Instant CRAG rewriter LLM.
+    """Return the singleton CRAG rewriter LLM (config.REWRITER_MODEL).
 
     Returns:
         The cached ChatGroq instance for the Rewriter node.
