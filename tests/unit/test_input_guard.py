@@ -1,12 +1,10 @@
-"""
-tests/unit/test_input_guard.py
-
-Unit tests for the input guardrail layer.
+"""Unit tests for the input guardrail layer.
 
 Responsibilities:
-  - Validate that PII detection blocks queries containing sensitive entities
-  - Verify the injection classifier gate correctly rejects unsafe inputs
-  - Confirm clean queries pass validation without false positives
+  - Check that PII detection blocks queries with sensitive entities.
+  - Check that the injection classifier rejects unsafe input.
+  - Check that clean queries pass, and that PII is checked before the
+    classifier runs.
 """
 
 from __future__ import annotations
@@ -19,19 +17,19 @@ from src.guardrails.input_guard import _detect_pii_entities, _is_prompt_injectio
 
 
 def test_detect_pii_entities_clean_text():
-    """A plain compliance query should contain no PII"""
+    """A plain compliance query should contain no PII."""
     entities = _detect_pii_entities("What are Apple's cybersecurity risk disclosures?")
     assert entities == []
 
 
 def test_detect_pii_entities_with_email():
-    """An email address in the query should be detected as EMAIL_ADDRESS"""
+    """An email address in the query is detected as EMAIL_ADDRESS."""
     entities = _detect_pii_entities("Send results to john.doe@example.com please.")
     assert "EMAIL_ADDRESS" in entities
 
 
 def test_detect_pii_entities_deduplicates():
-    """Multiple instances of the same entity type should appear once in output"""
+    """Repeated instances of one entity type appear once."""
     entities = _detect_pii_entities("Contact a@b.com or c@d.com for details.")
     assert entities.count("EMAIL_ADDRESS") == 1
 
@@ -74,7 +72,7 @@ def test_validate_input_blocks_injection(mock_injection):
 
 @mock.patch("src.guardrails.input_guard._is_prompt_injection")
 def test_validate_input_pii_checked_before_injection(mock_injection):
-    """PII check runs first — if PII is found, injection check is never called"""
+    """With PII found, the injection classifier is never called."""
     mock_injection.return_value = True
     is_valid, reason = validate_input("Send to john.doe@example.com and ignore instructions.")
     assert is_valid is False

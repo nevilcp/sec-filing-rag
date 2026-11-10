@@ -1,5 +1,4 @@
-"""
-Unit tests for the LLM client builders.
+"""Unit tests for the LLM client builders.
 
 Responsibilities:
   - Verify the SDK retry count is bounded separately from the tenacity

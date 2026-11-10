@@ -1,6 +1,4 @@
-"""
-Unit tests for the BM25 index build and search cache.
-"""
+"""Unit tests for the BM25 index build and search cache."""
 
 from __future__ import annotations
 

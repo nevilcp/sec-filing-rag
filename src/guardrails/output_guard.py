@@ -1,17 +1,14 @@
-"""
-guardrails/output_guard.py
-
-Output guardrails using Presidio PII anonymization + GPT-OSS-Safeguard-20B.
+"""Output guardrails: PII anonymization and a policy classifier.
 
 Responsibilities:
-  - Redact PII from generated system responses before sending to the user
-  - Screen outputs for policy violations (e.g., providing definitive legal advice)
-  - Provide safety warning annotations on responses that trigger moderate flags
+  - Redact PII from generated responses before they reach the user.
+  - Flag responses that read as definitive legal advice, using
+    GPT-OSS-Safeguard-20B on Groq.
+  - Return warnings for flagged responses. It never blocks one.
 
 Dependencies:
-  - presidio_analyzer
-  - presidio_anonymizer
-  - langchain_groq
+  - GROQ_API_KEY, for the policy classifier.
+  - The spaCy model en_core_web_lg, loaded through guardrails/pii.py.
 """
 
 from __future__ import annotations
@@ -32,17 +29,17 @@ logger = get_logger(__name__)
 
 
 def _anonymize_pii(text: str) -> tuple[str, list[str]]:
-    """Detect and replace PII tokens in text with labelled placeholders.
+    """Replace PII in the text with labelled placeholders.
 
-    Each detected entity type is replaced with a <ENTITY_TYPE> token
-    (e.g. <EMAIL_ADDRESS>) using Presidio's replace operator.
+    Each detected entity is replaced with a token such as
+    <EMAIL_ADDRESS>, using Presidio's replace operator.
 
     Args:
         text: The text to scan and anonymize.
 
     Returns:
-        A tuple of (anonymized_text, detected_entity_types). If no PII
-        is found, returns the original text unchanged with an empty list.
+        A tuple of (anonymized_text, detected_entity_types). Text with
+        no PII comes back unchanged with an empty list.
     """
     detections = analyzer().analyze(text=text, language="en", entities=PII_ENTITIES)
     if not detections:
@@ -60,7 +57,7 @@ def _anonymize_pii(text: str) -> tuple[str, list[str]]:
     return anonymized.text, entity_types
 
 
-# Policy classifier prompt. The {text} slot takes the response under review.
+# Policy classifier prompt. The {text} slot takes the response to check.
 _LEGAL_ADVICE_PROMPT = (
     "You are a quantitative compliance risk officer and content-safety classifier for an SEC compliance information system. "
     "Your task is to determine whether the response below violates the system's policy.\n\n"
@@ -87,13 +84,21 @@ _LEGAL_ADVICE_PROMPT = (
 
 
 def _is_definitive_legal_advice(text: str) -> bool:
-    """Detects definitive legal advice using GPT-OSS-Safeguard-20B.
+    """Classify the text with GPT-OSS-Safeguard-20B.
 
     Args:
         text: The generated response text.
 
     Returns:
-        True if the text violates the informational-only policy, False otherwise
+        True if the text violates the informational-only policy.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
+        RateLimitExhausted: If the prompt can never fit the model's
+            token limit.
+        Exception: Errors from the Groq call propagate, for example an
+            HTTP 413 when a long response exceeds the model's
+            tokens-per-minute limit.
     """
     prompt = _LEGAL_ADVICE_PROMPT.format(text=text)
     decision = (
@@ -109,14 +114,27 @@ def _is_definitive_legal_advice(text: str) -> bool:
 
 
 def validate_output(response: str) -> tuple[str, list[str]]:
-    """Validates and sanitizes the final output.
+    """Anonymize PII in a response and flag legal-advice language.
+
+    An empty or whitespace-only response is returned as is. The text
+    is never blocked: a policy violation only adds a warning.
 
     Args:
         response: The generated response text.
 
     Returns:
-        A tuple of (sanitized_response, warnings_list). The response will have
-        PII redacted if detected
+        A tuple of (sanitized_response, warnings). PII in the response
+        is replaced by placeholders.
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not set.
+        Exception: Errors from the policy classifier call propagate to
+            the caller (see _is_definitive_legal_advice).
+
+    Example:
+        >>> text, warnings = validate_output("Contact jo@example.com")
+        >>> text
+        'Contact <EMAIL_ADDRESS>'
     """
     with chain_span("validate_output", response) as span:
         warnings: list[str] = []

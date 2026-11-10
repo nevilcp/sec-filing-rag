@@ -1,13 +1,11 @@
-"""
-tests/unit/test_nodes.py
-
-Unit tests for the LangGraph state machine nodes.
+"""Unit tests for the LangGraph nodes.
 
 Responsibilities:
-  - Verify intent categorization and routing
-  - Test dual-gate (math + semantic) retrieval grading
-  - Ensure the CRAG rewriting loop terminates correctly
-  - Validate context formatting for final synthesis
+  - Check query categorization, including unparseable model replies.
+  - Check retrieval grading, which needs both the score check and the
+    LLM verdict to pass.
+  - Check the rewrite limit, the semantic cache lookup and the final
+    response, including its Sources footer.
 """
 
 from unittest import mock

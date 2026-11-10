@@ -1,12 +1,10 @@
-"""
-tests/unit/test_section_extractor.py
-
-Unit tests for the multi-tier EDGAR HTML section extractor.
+"""Unit tests for the multi-tier EDGAR HTML section extractor.
 
 Responsibilities:
-  - Validate anchor-based, heading-based, and fallback extraction logic
-  - Ensure structural noise (tables, XBRL tags, short lines) is purged
-  - Test the full parsing pipeline against varied document structures
+  - Check anchor, heading and plain-text extraction, and the
+    full-text fallback.
+  - Check that short lines and numeric rows are removed, that the
+    hidden iXBRL header is dropped, and that tagged figures are kept.
 """
 
 from bs4 import BeautifulSoup

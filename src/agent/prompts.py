@@ -1,5 +1,4 @@
-"""
-Prompt text and builders for the CRAG workflow nodes.
+"""Prompt text and builders for the CRAG workflow nodes.
 
 Responsibilities:
   - Hold the category-specific answer instructions
@@ -66,7 +65,14 @@ CATEGORY_INSTRUCTIONS = {
 
 
 def router_prompt(query_text: str) -> str:
-    """Build the prompt that classifies a query into a category."""
+    """Build the prompt that classifies a query into a category.
+
+    Args:
+        query_text: The user query to classify.
+
+    Returns:
+        The prompt text.
+    """
     return (
         "You are an expert quantitative compliance routing agent. "
         "Your task is to classify the user's question into exactly one category so the "
@@ -95,7 +101,15 @@ def router_prompt(query_text: str) -> str:
 
 
 def grader_prompt(query_text: str, preview: str) -> str:
-    """Build the prompt that judges whether retrieved excerpts are relevant."""
+    """Build the prompt that judges if retrieved excerpts are relevant.
+
+    Args:
+        query_text: The user query the excerpts should answer.
+        preview: The formatted excerpt previews to judge.
+
+    Returns:
+        The prompt text.
+    """
     return (
         "You are a strict quantitative compliance retrieval judge for an SEC information system. "
         "Your task is to determine whether the retrieved document excerpts are useful "
@@ -119,7 +133,14 @@ def grader_prompt(query_text: str, preview: str) -> str:
 
 
 def rewrite_prompt(query: str) -> str:
-    """Build the prompt that rewrites a query to improve retrieval."""
+    """Build the prompt that rewrites a query to improve retrieval.
+
+    Args:
+        query: The query to rewrite.
+
+    Returns:
+        The prompt text.
+    """
     return (
         "You are a quantitative compliance retrieval specialist. The previous retrieval attempt for the "
         "user's query returned irrelevant or insufficient results. Your task is to rewrite "
@@ -150,6 +171,9 @@ def respond_prompt(category: str, context: str, query_text: str) -> str:
             instructions.
         context: The formatted retrieved excerpts, or an empty string.
         query_text: The user's query as submitted.
+
+    Returns:
+        The prompt text.
     """
     category_instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
     return (

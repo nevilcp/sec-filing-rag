@@ -1,16 +1,10 @@
-"""
-api/routes.py
-
-FastAPI route handlers for SEC compliance RAG API.
+"""FastAPI route handlers for the SEC compliance RAG API.
 
 Responsibilities:
-  - Expose HTTP endpoints for RAG querying, ingestion, and system health
-  - Inject input/output guardrails around the core LangGraph execution
-  - Track endpoint-level metrics (cache hits, rewrites, latencies)
-
-Dependencies:
-  - fastapi
-  - opentelemetry
+  - Expose HTTP endpoints for querying, ingestion, health and corpus
+    status.
+  - Wrap the LangGraph run in the input and output guardrails.
+  - Keep the process-wide counters reported by /metrics.
 """
 
 from __future__ import annotations
@@ -41,7 +35,7 @@ router = APIRouter()
 
 
 def _run_ingestion_background() -> None:
-    """Executes the ingestion pipeline in a background thread"""
+    """Run the ingestion pipeline in a background task."""
     try:
         code = run_ingestion()
         logger.info(
@@ -98,16 +92,21 @@ def _record_metrics(metrics: dict[str, int], cache_hit: bool, rewrite_count: int
 
 @router.post("/query", response_model=QueryResponse)
 def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
-    """Primary endpoint for executing a compliance RAG query.
+    """Answer a compliance query through the RAG graph.
 
-    Wraps the LangGraph execution in input and output guardrails.
+    Validates the input, runs the LangGraph workflow, then sanitizes the
+    answer with the output guard.
 
     Args:
         payload: The user query request.
-        request: The FastAPI request object.
+        request: The FastAPI request object, which carries the compiled
+            graph and the metrics on app.state.
 
     Returns:
-        The generated response with retrieved citations and safety warnings
+        The answer with retrieved citations and any guardrail warnings.
+
+    Raises:
+        HTTPException: 400 if the input guard rejects the query.
     """
     with chain_span("query_endpoint", payload.query) as span:
         is_valid, reason = validate_input(payload.query)
@@ -186,8 +185,8 @@ def health_endpoint() -> dict[str, str]:
 def metrics_endpoint(request: Request) -> dict[str, Any]:
     """Return aggregate runtime metrics for the current server process.
 
-    Reports cumulative query counts, cache hit rate, average CRAG rewrite
-    count, and current sliding-window usage for the embedding rate limiter.
+    Reports the query count, cache hit rate, average CRAG rewrite count
+    and the current usage of the rate limiter the endpoint tracks.
 
     Args:
         request: The FastAPI request object carrying app.state.metrics.
@@ -263,8 +262,8 @@ def corpus_status() -> dict[str, Any]:
 def trigger_ingestion(background_tasks: BackgroundTasks) -> dict[str, str]:
     """Enqueue an asynchronous ingestion run and return immediately.
 
-    The ingestion pipeline runs in a BackgroundTasks thread so the HTTP
-    response is not blocked. Progress is visible in logs/rag/pipeline.log.
+    The ingestion pipeline runs as a background task so the HTTP
+    response is not blocked. Progress is logged to stdout.
 
     Args:
         background_tasks: FastAPI's background task runner.

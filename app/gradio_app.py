@@ -1,16 +1,12 @@
-"""
-app/gradio_app.py
-
-Gradio frontend for SEC Compliance RAG API.
+"""Gradio frontend for the SEC compliance RAG API.
 
 Responsibilities:
-  - Provide a chat interface for compliance analysts
-  - Render structured HTML citations and legal-advice disclaimers
-  - Relay user inputs to the FastAPI backend
+  - Provide a chat interface for compliance analysts.
+  - Render HTML citation cards and a legal-advice disclaimer.
+  - Relay user input to the FastAPI backend over HTTP.
 
 Dependencies:
-  - gradio
-  - requests
+  - A running API server at config.API_BASE_URL.
 """
 
 import html
@@ -29,6 +25,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 ALL_COMPANIES = "All companies"
 NO_DEBUG_INFO = "No debug info yet."
 
+# Each entry is (text colour, background colour) for a ticker badge.
 _TICKER_PALETTE = [
     ("#818cf8", "#312e81"),
     ("#22d3ee", "#164e63"),
@@ -42,7 +39,7 @@ _TICKER_PALETTE = [
 
 
 def _ticker_colours(ticker: str, seen: dict) -> tuple[str, str]:
-    """Return (text_colour, bg_colour) for a ticker, consistent within a panel."""
+    """Return (text_colour, bg_colour) for a ticker within a panel."""
     if ticker not in seen:
         idx = len(seen) % len(_TICKER_PALETTE)
         seen[ticker] = _TICKER_PALETTE[idx]
@@ -50,8 +47,10 @@ def _ticker_colours(ticker: str, seen: dict) -> tuple[str, str]:
 
 
 def _edgar_url(accession_number: str) -> str:
-    """Convert an accession number to the SEC EDGAR filing index URL."""
+    """Build the EDGAR filing index URL from an accession number.
 
+    The CIK in the URL is taken from the accession number prefix.
+    """
     clean = accession_number.replace("-", "")
     cik = clean[:10].lstrip("0")
     return f"https://www.sec.gov/Archives/edgar/data/{cik}/{clean}/{accession_number}-index.htm"
@@ -201,15 +200,18 @@ _PANEL_STYLE = """
 
 
 def build_citations_html(sources: list[dict]) -> str:
-    """Renders a styled HTML citation panel from a list of SourceCitation dicts.
+    """Render a styled HTML citation panel from SourceCitation dicts.
+
+    Repeated (accession, section) pairs are shown once. All values from
+    the API are HTML-escaped.
 
     Args:
-        sources: A list of citation metadata dictionaries.
+        sources: Citation metadata dicts from the API response.
 
     Returns:
-        An HTML string containing the rendered citation cards.
+        An HTML string with one card per distinct source, or an empty
+        state panel when there are none.
     """
-
     if not sources:
         return """
         <div class="citation-panel">
@@ -308,26 +310,27 @@ _LEGAL_KEYWORDS = (
 
 
 def _has_legal_warning(warnings: list[str]) -> bool:
-    """Checks if any warning string contains a legal-advice signal.
+    """Return True if any warning contains a legal-advice keyword.
 
     Args:
-        warnings: A list of warning strings from the backend.
+        warnings: Warning strings from the backend.
 
     Returns:
-        True if a legal warning keyword is present.
+        True if a keyword in _LEGAL_KEYWORDS is present.
     """
     lowered = " ".join(warnings).lower()
     return any(kw in lowered for kw in _LEGAL_KEYWORDS)
 
 
 def build_legal_banner_html(warnings: list[str]) -> str:
-    """Builds a styled disclaimer banner HTML string.
+    """Build the legal-advice disclaimer banner as HTML.
 
     Args:
-        warnings: A list of warning strings from the backend.
+        warnings: Warning strings from the backend.
 
     Returns:
-        An HTML string for the banner, or empty string if not needed.
+        The banner HTML, or an empty string when no warning calls for
+        it.
     """
     if not _has_legal_warning(warnings):
         return ""
@@ -376,13 +379,13 @@ def build_legal_banner_html(warnings: list[str]) -> str:
 
 
 def get_companies() -> list[str]:
-    """Fetch the indexed company list from the backend corpus status endpoint.
+    """Fetch the indexed company list from the corpus status endpoint.
 
-    Falls back to ['All companies'] if the backend is unreachable or returns
-    an error, so the UI remains usable during startup or connection issues.
+    Falls back to ['All companies'] if the backend is unreachable or
+    returns an error, so the UI stays usable while the API starts.
 
     Returns:
-        A list of company ticker strings prepended with 'All companies'.
+        The tickers, preceded by 'All companies'.
     """
     try:
         response = requests.get(STATUS_URL, timeout=REQUEST_TIMEOUT_SECONDS)
@@ -395,7 +398,7 @@ def get_companies() -> list[str]:
 
 
 def trigger_ingestion() -> None:
-    """Fire a background ingestion job via the backend API."""
+    """Start a background ingestion job through the backend API."""
     try:
         response = requests.post(INGEST_URL, timeout=REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 200:
@@ -424,14 +427,14 @@ def submit_query(
 ) -> tuple:
     """Send a user query to the backend API and update the chat UI.
 
-    Handles HTTP connection errors, 400 guardrail rejections, and other
-    non-200 responses gracefully, returning an error message in the chat
-    history without raising an exception to the Gradio runtime.
+    Connection errors, 400 guardrail rejections, other non-200 responses
+    and invalid JSON are reported as an error message in the chat
+    history instead of raising into the Gradio runtime.
 
     Args:
         user_text: The raw text entered by the user.
         history: The current Gradio chatbot message history.
-        sess_id: The active session UUID for LangGraph memory.
+        sess_id: The session UUID, sent as the LangGraph thread id.
         comp_filter: The selected company filter dropdown value.
 
     Returns:
