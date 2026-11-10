@@ -14,11 +14,11 @@ logs/
 │   └── app.log
 ├── api/           # HTTP access log (method, path, status, latency)
 │   └── access.log
-├── rag/           # RAG pipeline traces (node events, grades, rewrites, cache)
+├── rag/           # One query_complete record per answered query
 │   └── pipeline.log
-├── phoenix/       # Phoenix / OpenTelemetry sidecar events and export snapshots
+├── phoenix/       # Reserved, nothing writes here yet
 │   └── phoenix.log
-├── system/        # Infrastructure: rate limiter, embeddings, vector-store I/O
+├── system/        # Reserved, nothing writes here yet
 │   └── system.log
 └── audit/         # Security-sensitive: input/output guard decisions (NOT on stdout)
     └── audit.log
@@ -60,7 +60,7 @@ Emitted by `src/api/main.py` at startup and shutdown.
   "message": "SEC RAG API starting up",
   "host": "0.0.0.0",
   "port": 8000,
-  "phoenix_enabled": "true"
+  "phoenix_enabled": true
 }
 ```
 
@@ -84,7 +84,7 @@ One record per HTTP request. Emitted by `_AccessLogMiddleware`.
 
 ### `rag` — Pipeline traces
 
-One record per completed query, plus per-node events from `src/agent/nodes.py`.
+One `query_complete` record per answered query, emitted by `src/api/routes.py`. Per-node events from `src/agent/nodes.py` go to stdout only, not to this file.
 
 ```json
 {
@@ -104,8 +104,7 @@ One record per completed query, plus per-node events from `src/agent/nodes.py`.
 
 ### `phoenix` — Phoenix / OTEL events
 
-Captures Phoenix server connectivity and trace-export events. Useful for
-debugging when traces are missing in the Phoenix UI.
+Reserved for Phoenix and OpenTelemetry events. Nothing writes to this channel yet, so `phoenix.log` stays empty. The record below shows the intended shape.
 
 ```json
 {
@@ -114,15 +113,14 @@ debugging when traces are missing in the Phoenix UI.
   "channel": "phoenix",
   "message": "Phoenix tracing enabled",
   "grpc_endpoint": "http://localhost:4317",
-  "http_endpoint": "http://localhost:8001/v1/traces",
-  "ui": "http://localhost:8001"
+  "http_endpoint": "http://localhost:6006/v1/traces",
+  "ui": "http://localhost:6006"
 }
 ```
 
 ### `system` — Infrastructure / rate limiter
 
-Rate limiter events, embedding calls, vector-store I/O. Written by
-`src/core/rate_limiter.py` and `src/core/embeddings.py`.
+Reserved for infrastructure events. Nothing writes to this channel yet, so `system.log` stays empty. Rate limiter and embedding messages go to stdout only.
 
 ### `audit` — Security decisions ⚠️
 
@@ -149,7 +147,6 @@ to avoid leaking sensitive prompt content into terminal logs.
 |------------------------|--------------------------------|
 | Rotation schedule      | Daily at UTC midnight          |
 | Retained history       | 14 days (configurable via `LOG_ROTATION_BACKUP_COUNT` in `config.py`) |
-| Max file size (soft)   | 50 MB (`LOG_MAX_BYTES` — informational, rotation is time-based)       |
 | Archive naming         | `<base>.log.YYYY-MM-DD`        |
 
 To adjust retention, modify `LOG_ROTATION_BACKUP_COUNT` in `src/core/config.py`

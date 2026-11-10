@@ -23,7 +23,7 @@ from phoenix.evals.utils import to_annotation_dataframe
 from phoenix.trace import suppress_tracing
 
 from src.core import config
-from src.core.logging import get_logger
+from src.core.logging import configure_logging, get_logger
 from src.eval.prompts import (
     ANSWER_RELEVANCE_TEMPLATE,
 )
@@ -101,7 +101,12 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    """Run the async evaluation loop as a CLI command."""
+    """Run the async evaluation loop as a CLI command.
+
+    Configures logging first, because nothing else does for this entry
+    point and the progress messages would otherwise be dropped.
+    """
+    configure_logging()
     asyncio.run(main_async())
 
 
