@@ -1,15 +1,4 @@
-"""Extract clean, section-segmented text from EDGAR filing HTML.
-
-Responsibilities:
-  - Parse raw EDGAR HTML into one text block per target 10-K item.
-  - Try three extraction tiers per item (anchor, heading, plain-text
-    regex) and fall back to the whole document if none succeeds.
-  - Clean the text of boilerplate, short lines and numeric table rows.
-  - Drop the hidden iXBRL header but keep tagged visible text.
-
-Dependencies:
-  - The lxml parser, used through BeautifulSoup.
-"""
+"""Extract clean, section-segmented text from EDGAR filing HTML."""
 
 from __future__ import annotations
 
@@ -23,8 +12,6 @@ from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Maps each target 10-K item label to the section name stored in
-# chunk metadata.
 _CANONICAL_NAMES = {
     "Item 1": "business_overview",
     "Item 1A": "risk_factors",
@@ -36,18 +23,6 @@ _CANONICAL_NAMES = {
 
 
 def _clean_extracted_text(text: str) -> str:
-    """Clean extracted text of boilerplate and noise.
-
-    Strips residual HTML tags, drops lines shorter than 20 characters
-    and purely numeric lines (financial table rows), and collapses
-    extra whitespace.
-
-    Args:
-        text: Raw extracted text, possibly with HTML fragments.
-
-    Returns:
-        Normalized plain text, ready for chunking.
-    """
     soup = BeautifulSoup(text, "lxml")
     text = soup.get_text(separator=" ")
 
@@ -80,19 +55,7 @@ def _clean_extracted_text(text: str) -> str:
 
 
 def _extract_tier_1(soup: BeautifulSoup, item: str) -> str | None:
-    """Extract a section by anchor (tier 1, highest fidelity).
-
-    Finds an HTML anchor whose id or name exactly matches the
-    normalized item label (for example 'item1a'), then collects all
-    text up to the next item anchor.
-
-    Args:
-        soup: Parsed BeautifulSoup tree of the filing HTML.
-        item: The SEC item label to locate, for example 'Item 1A'.
-
-    Returns:
-        The extracted text, or None if no matching anchor is found.
-    """
+    """Extract a section from HTML anchors, stopping at the next item anchor."""
     item_clean = item.replace(" ", "").lower()
     pattern = re.compile(rf"^{item_clean}$", re.IGNORECASE)
 
@@ -125,19 +88,7 @@ def _extract_tier_1(soup: BeautifulSoup, item: str) -> str | None:
 
 
 def _extract_tier_2(soup: BeautifulSoup, item: str) -> str | None:
-    """Extract a section by heading tag (tier 2, structural fallback).
-
-    Finds an h1, h2 or h3 tag whose text starts with the item label,
-    then collects all text up to the next item heading. Used when
-    anchor ids are absent or malformed.
-
-    Args:
-        soup: Parsed BeautifulSoup tree of the filing HTML.
-        item: The SEC item label to locate, for example 'Item 1A'.
-
-    Returns:
-        The extracted text, or None if no matching heading is found.
-    """
+    """Extract a section from heading tags when anchors do not provide a match."""
     item_pattern = item.replace(" ", r"\s+")
     pattern = re.compile(rf"^\s*{item_pattern}[\.\s:-]", re.IGNORECASE)
 
@@ -163,20 +114,7 @@ def _extract_tier_2(soup: BeautifulSoup, item: str) -> str | None:
 
 
 def _extract_tier_3(text: str, item: str) -> str | None:
-    """Extract a section by plain-text regex (tier 3, last resort).
-
-    Matches item boundaries in the whole document text and keeps the
-    longest candidate, which avoids table-of-contents entries because
-    those are short.
-
-    Args:
-        text: Full plain text of the filing, from soup.get_text.
-        item: The SEC item label to locate, for example 'Item 1A'.
-
-    Returns:
-        The longest matching chunk if it exceeds 100 characters,
-        otherwise None.
-    """
+    """Extract a section from plain-text item headings as the final matching tier."""
     item_pattern = item.replace(" ", r"\s+")
     start_pattern = rf"(?i)\b{item_pattern}(?:[\.\s-]|:)"
     end_pattern = r"(?i)\bItem\s*\d+[A-Z]?(?:[\.\s-]|:)"
@@ -204,23 +142,8 @@ def _extract_tier_3(text: str, item: str) -> str | None:
 
 
 def extract_sections(html_content: str) -> dict[str, str]:
-    """Extract the target sections from an EDGAR filing as clean text.
-
-    Removes the hidden iXBRL header, then tries three tiers for each
-    item in config.EDGAR_TARGET_SECTIONS: anchor, heading tag and
-    plain-text regex. A section needs at least 100 characters to
-    count. If no item yields a section, the whole cleaned document is
-    returned under the 'full_text' key.
-
-    Args:
-        html_content: Raw HTML string of the EDGAR filing.
-
-    Returns:
-        A dict mapping section names, for example 'mda' or
-        'risk_factors', to cleaned text.
-    """
-    # Only ix:header holds hidden XBRL metadata. Other ix:* tags wrap
-    # visible text such as financial figures, so their text stays.
+    """Extract configured sections, falling back to full text when no section matches."""
+    # Remove hidden ix:header metadata while preserving visible figures in other ix:* tags.
     html_cleaned = re.sub(r"<ix:header\b[^>]*>.*?</ix:header>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
 
     soup = BeautifulSoup(html_cleaned, "lxml")

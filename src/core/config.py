@@ -1,21 +1,4 @@
-"""Centralized configuration for the SEC compliance RAG system.
-
-Responsibilities:
-  - Define filesystem paths for data, logs, and indexes.
-  - Assign LLM models to graph nodes based on performance and
-    rate-limit needs.
-  - Configure retrieval thresholds and chunking parameters.
-  - Parse environment-driven settings once, at import time.
-  - Fail fast when EDGAR_FISCAL_YEAR is missing.
-
-Not responsible for:
-  - Validating API keys or EDGAR_CONTACT_EMAIL (read at call time by
-    llm_factory.py and corpus.py).
-  - Rate-limit enforcement (see core/rate_limiter.py).
-
-Dependencies:
-  - A .env file or environment that sets EDGAR_FISCAL_YEAR.
-"""
+"""Centralized configuration for the SEC compliance RAG system."""
 
 import os
 from pathlib import Path
@@ -24,13 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# GROQ_API_KEY, GEMINI_API_KEY and EDGAR_CONTACT_EMAIL are not read
-# here. Their consumers read the environment at call time because tests
-# monkeypatch these variables after this module has been imported.
-
 
 def _env_flag(name: str) -> bool:
-    """Return True when the environment variable is set to 'true'."""
     return os.getenv(name, "").lower() == "true"
 
 
@@ -56,13 +34,11 @@ OUTPUT_GUARD_MODEL = "openai/gpt-oss-safeguard-20b"
 # Prompt Guard 2 returns a probability; scores at or above this block.
 INPUT_GUARD_INJECTION_THRESHOLD = 0.5
 ROUTER_MODEL = "openai/gpt-oss-20b"
-# Grader and rewriter use a different model from the router so each
-# role gets its own Groq per-model TPM budget on the free tier
+# Separate the router budget from the shared grader and rewriter budget.
 GRADER_MODEL = "openai/gpt-oss-120b"
 REWRITER_MODEL = "openai/gpt-oss-120b"
 GENERATION_MODEL = "gemini-3.5-flash"
-# Judge model for the Phoenix evals, reached through the Groq
-# OpenAI-compatible endpoint because litellm is not installed.
+# Use Groq's OpenAI-compatible endpoint for Phoenix evaluations.
 EVAL_MODEL = "openai/gpt-oss-120b"
 EVAL_BASE_URL = "https://api.groq.com/openai/v1"
 # Kept at 2 to respect Groq free-tier rate limits.
@@ -119,8 +95,7 @@ RETRY_MULTIPLIER_SECONDS = 2.0
 RETRY_MIN_WAIT_SECONDS = 5.0
 RETRY_MAX_WAIT_SECONDS = 60.0
 RETRY_MAX_ATTEMPTS = 8
-# SDK-level retries cover transient 5xx and connection errors. Tenacity
-# handles 429s, so a larger value here multiplies the call count.
+# SDK retries and Tenacity retries can multiply the number of API calls.
 LLM_SDK_MAX_RETRIES = 2
 
 
@@ -145,12 +120,10 @@ CORS_ORIGINS = (
 
 GRADIO_HOST = os.getenv("GRADIO_HOST", "0.0.0.0")
 GRADIO_PORT = int(os.getenv("GRADIO_PORT", "7860"))
-# Where the Gradio frontend reaches the API.
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 PHOENIX_ENABLED = _env_flag("PHOENIX_ENABLED")
 PHOENIX_HOST = os.getenv("PHOENIX_HOST", "localhost")
 PHOENIX_PORT = int(os.getenv("PHOENIX_PORT", "6006"))
-# Project that run.py registers traces under; the evals read it back.
 PHOENIX_PROJECT_NAME = "sec-filing-rag"

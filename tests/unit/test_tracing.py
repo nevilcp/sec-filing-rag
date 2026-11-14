@@ -1,11 +1,4 @@
-"""Unit tests for the tracing helpers.
-
-Responsibilities:
-  - Verify chain_span sets the OpenInference attributes on a standard
-    OpenTelemetry tracer.
-  - Verify the guardrails run with no tracer provider installed, which
-    is the default when Phoenix is disabled.
-"""
+"""Unit tests for the tracing helpers."""
 
 from unittest import mock
 

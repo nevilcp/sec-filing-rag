@@ -1,9 +1,4 @@
-"""Unit tests for the LLM client builders.
-
-Responsibilities:
-  - Verify the SDK retry count is bounded separately from the tenacity
-    retry loop, so the two do not multiply.
-"""
+"""Unit tests for the LLM client builders."""
 
 from unittest import mock
 

@@ -32,8 +32,6 @@ build/
 .ipynb_checkpoints/
 Thumbs.db
 
-# --- Project Specific ---
-
 # Antigravity agent configurations and rules
 .agents/
 
@@ -49,3 +47,6 @@ logs/**/*.log.*
 
 # Experimental scratchpads
 miscellaneous/
+
+# Local documentation
+docs/

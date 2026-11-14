@@ -1,16 +1,4 @@
-"""Centralized embedding client for the SEC compliance RAG system.
-
-Responsibilities:
-  - Provide local embeddings for queries and document chunks.
-  - Load the BAAI/bge-m3 model lazily and share one instance.
-
-Not responsible for:
-  - Chunking or text splitting (see rag/ingest.py).
-  - Vector storage or retrieval (see rag/vector_store.py).
-
-Dependencies:
-  - The BGE-M3 weights, downloaded on first use (about 2.3 GB).
-"""
+"""Centralized embedding client for the SEC compliance RAG system."""
 
 from __future__ import annotations
 
@@ -25,7 +13,6 @@ logger = get_logger(__name__)
 
 @locked_singleton
 def _get_model() -> BGEM3FlagModel:
-    """Return the shared BGE-M3 model, loading it on first call."""
     logger.info("Loading BGE-M3 embedding model. The first call downloads weights (~2.3 GB).")
     return BGEM3FlagModel(
         config.BGE_M3_MODEL_NAME,
@@ -35,22 +22,7 @@ def _get_model() -> BGEM3FlagModel:
 
 
 def embed_query(text: str) -> list[float]:
-    """Encode a query string into a dense embedding vector.
-
-    Uses a batch size of 1 and a max_length of 512 tokens, which suits
-    short user queries.
-
-    Args:
-        text: The raw query string to embed.
-
-    Returns:
-        The normalized dense embedding vector.
-
-    Example:
-        >>> vector = embed_query("Apple net sales")
-        >>> len(vector) == config.QDRANT_VECTOR_SIZE
-        True
-    """
+    """Encode a query as a normalized dense vector with a 512-token limit."""
     model = _get_model()
     embeddings = model.encode(
         [text],
@@ -62,23 +34,7 @@ def embed_query(text: str) -> list[float]:
 
 
 def embed_documents(texts: list[str]) -> list[list[float]]:
-    """Encode document strings into dense embedding vectors.
-
-    Uses a max_length of 8192 tokens to cover full section-length
-    chunks. config.EMBEDDING_BATCH_SIZE sets the batch size, which
-    keeps memory bounded during large ingestion runs.
-
-    Args:
-        texts: The document texts to embed.
-
-    Returns:
-        One embedding vector per input text, in input order.
-
-    Example:
-        >>> vectors = embed_documents(["chunk one", "chunk two"])
-        >>> len(vectors)
-        2
-    """
+    """Encode documents in input order with an 8192-token limit per document."""
     model = _get_model()
     embeddings = model.encode(
         texts,

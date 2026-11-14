@@ -1,13 +1,4 @@
-"""Pytest configuration for the unit test suite.
-
-Responsibilities:
-  - Pin environment variables before any src module is imported, so
-    tests never read a developer's .env or reach a live API.
-
-Dependencies:
-  - python-dotenv does not override variables that are already set, so
-    the defaults below win over any local .env file.
-"""
+"""Pytest configuration for the unit test suite."""
 
 import os
 

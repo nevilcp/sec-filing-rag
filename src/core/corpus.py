@@ -1,14 +1,4 @@
-"""Company identity layer for the EDGAR ingestion pipeline.
-
-Responsibilities:
-  - Fetch and cache the SEC EDGAR company-tickers map.
-  - Resolve ticker symbols to zero-padded 10-digit CIKs.
-  - Enrich KNOWN_TICKERS with CIKs and company names for ingestion.
-  - Build the SEC-required User-Agent header value.
-
-Dependencies:
-  - EDGAR_CONTACT_EMAIL must be set before any SEC request.
-"""
+"""Company identity layer for the EDGAR ingestion pipeline."""
 
 from __future__ import annotations
 
@@ -27,24 +17,12 @@ logger = get_logger(__name__)
 
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
-# Seven days, in seconds.
 CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
 _IN_MEMORY_CIK_MAP: dict[str, dict] | None = None
 
 
 def _get_user_agent() -> str:
-    """Build the SEC-required User-Agent header value.
-
-    The SEC requires a real email address in the User-Agent to identify
-    the caller and avoid IP-based throttling or blocks.
-
-    Returns:
-        A User-Agent string in the format 'ComplianceRAG <email>'.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-    """
     email = os.getenv("EDGAR_CONTACT_EMAIL")
     if not email:
         raise ValueError(
@@ -55,23 +33,7 @@ def _get_user_agent() -> str:
 
 
 def get_cik_map() -> dict[str, dict]:
-    """Return the EDGAR bulk company-tickers map.
-
-    Reads a disk cache when the file is younger than 7 days, to avoid
-    rate limiting by the SEC endpoint. Otherwise downloads a fresh copy
-    and rewrites the cache. The result is also kept in memory.
-
-    Returns:
-        A dict mapping a string index to company details, for example
-        {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "..."}}.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set, or the cache file
-            holds invalid JSON.
-        httpx.HTTPStatusError: If the SEC endpoint returns an error
-            status.
-        httpx.RequestError: If the request fails at the network level.
-    """
+    """Load the SEC ticker map from memory, a seven-day disk cache, or the SEC endpoint."""
     global _IN_MEMORY_CIK_MAP
     if _IN_MEMORY_CIK_MAP is not None:
         return _IN_MEMORY_CIK_MAP
@@ -103,18 +65,7 @@ def get_cik_map() -> dict[str, dict]:
 
 
 def resolve_cik(ticker: str) -> str:
-    """Resolve a ticker symbol to its zero-padded 10-digit CIK.
-
-    Args:
-        ticker: The stock ticker symbol, case-insensitive.
-
-    Returns:
-        The 10-digit CIK string used for EDGAR lookups.
-
-    Raises:
-        ValueError: If the ticker is not in the corpus, or if the
-            company map cannot be built (see get_corpus_companies).
-    """
+    """Resolve a ticker to its zero-padded 10-digit CIK, or raise if it is unknown."""
     ticker_upper = ticker.upper()
     ticker_to_cik = {c["ticker"].upper(): c["cik"] for c in get_corpus_companies()}
     if ticker_upper not in ticker_to_cik:
@@ -123,20 +74,7 @@ def resolve_cik(ticker: str) -> str:
 
 
 def get_corpus_companies() -> list[dict]:
-    """Build the company manifest from KNOWN_TICKERS using EDGAR data.
-
-    Matches each ticker against the EDGAR company-tickers map to find
-    the official CIK and company name.
-
-    Returns:
-        One dict per ticker, with 'ticker', 'company_name' and a
-        zero-padded 'cik' string.
-
-    Raises:
-        ValueError: If a ticker cannot be found in the EDGAR map.
-        httpx.HTTPError: If the company map must be downloaded and the
-            request fails (see get_cik_map).
-    """
+    """Resolve the configured corpus tickers to SEC company identities."""
     enriched_manifest = []
 
     cik_map = get_cik_map()

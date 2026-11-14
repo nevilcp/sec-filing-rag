@@ -1,11 +1,4 @@
-"""Unit tests for output sanitization and the output guardrail.
-
-Responsibilities:
-  - Check that PII is redacted from responses.
-  - Check that the policy classifier flags definitive legal advice.
-  - Check that validate_output attaches warnings and keeps PII out of
-    the classifier prompt.
-"""
+"""Unit tests for output sanitization and the output guardrail."""
 
 from unittest import mock
 

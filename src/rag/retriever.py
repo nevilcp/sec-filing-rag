@@ -1,15 +1,4 @@
-"""Hybrid retrieval: dense and sparse search, fusion and reranking.
-
-Responsibilities:
-  - Run dense (Qdrant) and sparse (BM25) searches one after the other.
-  - Merge and deduplicate the candidates with Reciprocal Rank Fusion.
-  - Rerank candidates with a cross-encoder and drop low scores.
-  - Detect tickers and regulations named in the query. A ticker sets
-    the dense search filter. A regulation is only logged.
-
-Dependencies:
-  - The BGE reranker weights, downloaded on first use.
-"""
+"""Hybrid retrieval: dense and sparse search, fusion and reranking."""
 
 from __future__ import annotations
 
@@ -33,22 +22,11 @@ _RRF_K = 60
 
 @locked_singleton
 def _get_reranker() -> CrossEncoder:
-    """Return the shared BGE reranker, loading it on first call.
-
-    Returns:
-        The CrossEncoder named by config.BGE_RERANKER_MODEL_NAME.
-    """
     return CrossEncoder(config.BGE_RERANKER_MODEL_NAME)
 
 
 def _detect_regulation(query_text: str) -> str | None:
-    """Return the first KNOWN_REGULATIONS entry in the query, or None.
-
-    Matching is a case-insensitive substring test.
-
-    Args:
-        query_text: The raw user query string.
-    """
+    """Return the first configured regulation found by case-insensitive substring matching."""
     lowered = query_text.lower()
     for regulation in KNOWN_REGULATIONS:
         if regulation.lower() in lowered:
@@ -57,14 +35,7 @@ def _detect_regulation(query_text: str) -> str | None:
 
 
 def _detect_ticker(query_text: str) -> str | None:
-    """Return the first KNOWN_TICKERS entry in the query, or None.
-
-    Uses word-boundary matching so that a ticker such as 'MS' does not
-    match inside 'business' or 'most'.
-
-    Args:
-        query_text: The raw user query string.
-    """
+    """Return the first configured ticker found as a whole word, ignoring case."""
     for ticker in KNOWN_TICKERS:
         if re.search(rf"\b{re.escape(ticker)}\b", query_text, re.IGNORECASE):
             return ticker
@@ -72,18 +43,7 @@ def _detect_ticker(query_text: str) -> str | None:
 
 
 def rrf_merge(result_lists: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Merge ranked result lists with Reciprocal Rank Fusion (RRF).
-
-    Combines the outputs of several retrieval strategies without score
-    normalization. Results with identical text are merged into one
-    entry whose score sums the per-list RRF scores.
-
-    Args:
-        result_lists: The ranked result lists to fuse.
-
-    Returns:
-        The merged results, sorted by descending RRF score.
-    """
+    """Fuse ranked lists with RRF, merging identical text and retaining the first metadata."""
     aggregated: dict[str, dict[str, Any]] = {}
     for result_list in result_lists:
         for rank, result in enumerate(result_list, start=1):
@@ -103,16 +63,6 @@ def rrf_merge(result_lists: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
 
 
 def _rerank(query_text: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Score and sort candidates with the BGE cross-encoder.
-
-    Args:
-        query_text: The user query string.
-        candidates: Fused candidate documents from the RRF merge.
-
-    Returns:
-        The candidates sorted by descending cross-encoder score, or an
-        empty list if there are none.
-    """
     if not candidates:
         return []
 
@@ -137,30 +87,7 @@ def _rerank(query_text: str, candidates: list[dict[str, Any]]) -> list[dict[str,
 
 
 def retrieve(query_text: str, company_filter: str | None = None) -> list[dict[str, Any]]:
-    """Run the hybrid retrieval pipeline and return the top results.
-
-    Runs dense (Qdrant) and then sparse (BM25) retrieval, fuses the
-    results with RRF, reranks with a cross-encoder, trims to the top k
-    and drops results below config.BGE_SCORE_THRESHOLD.
-
-    Args:
-        query_text: The user query string.
-        company_filter: Optional ticker symbol that restricts the dense
-            search to one company. A ticker named in the query takes
-            precedence. The sparse search is never filtered.
-
-    Returns:
-        Result dicts with 'text', 'score' and 'metadata' keys, whose
-        score is at least config.BGE_SCORE_THRESHOLD.
-
-    Raises:
-        FileNotFoundError: If the BM25 index has not been built.
-
-    Example:
-        >>> docs = retrieve("Apple total net sales fiscal 2025")
-        >>> docs[0]["metadata"]["ticker"]
-        'AAPL'
-    """
+    """Fuse dense and sparse matches, rerank them, trim to top k, and drop low scores."""
     regulation_match = _detect_regulation(query_text)
     if regulation_match:
         logger.info(

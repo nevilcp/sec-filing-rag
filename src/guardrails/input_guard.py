@@ -1,15 +1,4 @@
-"""Input guardrails: PII detection and a prompt injection check.
-
-Responsibilities:
-  - Block queries that contain PII, before any text leaves the process.
-  - Block prompt injection and jailbreak attempts, using the Llama
-    PromptGuard-2-86M classifier on Groq.
-  - Open a trace span and write an audit-friendly log line per decision.
-
-Dependencies:
-  - GROQ_API_KEY, for the injection classifier.
-  - The spaCy model en_core_web_lg, loaded through guardrails/pii.py.
-"""
+"""Input guardrails: PII detection and a prompt injection check."""
 
 from __future__ import annotations
 
@@ -29,15 +18,6 @@ logger = get_logger(__name__)
 
 
 def _detect_pii_entities(text: str) -> list[str]:
-    """Return the distinct PII entity types found in the text.
-
-    Args:
-        text: The input text to scan for PII.
-
-    Returns:
-        Unique entity type names in detection order, for example
-        ['EMAIL_ADDRESS', 'US_SSN'].
-    """
     results = analyzer().analyze(text=text, language="en", entities=PII_ENTITIES)
     ordered_types: list[str] = []
     for item in results:
@@ -48,23 +28,7 @@ def _detect_pii_entities(text: str) -> list[str]:
 
 
 def _is_prompt_injection(query: str) -> bool:
-    """Classify the input with PromptGuard-2-86M on Groq.
-
-    The model replies with a score. If the reply is not a number, a
-    textual verdict containing 'unsafe' or 'malicious' also counts.
-
-    Args:
-        query: Raw user input text.
-
-    Returns:
-        True if the injection score reaches
-        config.INPUT_GUARD_INJECTION_THRESHOLD.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        RateLimitExhausted: If the query can never fit the model's
-            token limit.
-    """
+    """Check the injection score, accepting unsafe or malicious verdicts as a fallback."""
     result = (
         invoke_with_rate_limit(
             get_input_guard_llm(),
@@ -78,34 +42,11 @@ def _is_prompt_injection(query: str) -> bool:
     try:
         return float(result) >= config.INPUT_GUARD_INJECTION_THRESHOLD
     except ValueError:
-        # Not a score: accept a textual verdict from another classifier.
         return "unsafe" in result or "malicious" in result
 
 
 def validate_input(query: str) -> tuple[bool, str]:
-    """Check a query for PII and prompt injection.
-
-    PII is checked first, so a query that contains PII is rejected
-    without being sent to the Groq classifier.
-
-    Args:
-        query: Raw user input text.
-
-    Returns:
-        A tuple of (is_valid, rejection_reason). The reason is an empty
-        string when the query is valid.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        Exception: Errors from the Groq call, such as an API status
-            error, propagate to the caller.
-
-    Example:
-        >>> validate_input("What were Apple's net sales in 2025?")
-        (True, '')
-        >>> validate_input("Reach me at jo@example.com")
-        (False, "PII detected: ['EMAIL_ADDRESS']")
-    """
+    """Reject PII locally before checking prompt injection, returning validity and a reason."""
     with chain_span("validate_input", query) as span:
         detected = _detect_pii_entities(query)
         if detected:

@@ -1,11 +1,4 @@
-"""Unit tests for the hybrid retrieval pipeline.
-
-Responsibilities:
-  - Check that Reciprocal Rank Fusion merges and deduplicates results.
-  - Check the ordering of cross-encoder reranking scores.
-  - Check ticker and regulation detection in queries, including word
-    boundary matching.
-"""
+"""Unit tests for the hybrid retrieval pipeline."""
 
 from unittest import mock
 

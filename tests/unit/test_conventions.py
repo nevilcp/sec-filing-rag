@@ -1,12 +1,4 @@
-"""Convention checks for the source tree.
-
-Responsibilities:
-  - Verify that comments, docstrings and log messages under src/ and
-    app/ are ASCII only. Ruff cannot catch non-ASCII characters in log
-    message strings, so this test does.
-  - Leave LLM prompt strings and user-facing text alone, since changing
-    them would change model or UI behaviour.
-"""
+"""Convention checks for the source tree."""
 
 from __future__ import annotations
 
@@ -26,7 +18,6 @@ def _has_non_ascii(text: str) -> bool:
 
 
 def _docstrings(tree: ast.AST) -> Iterator[tuple[int, str]]:
-    """Yield (line, text) for every docstring in the tree."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
             text = ast.get_docstring(node, clean=False)
@@ -36,7 +27,6 @@ def _docstrings(tree: ast.AST) -> Iterator[tuple[int, str]]:
 
 
 def _log_messages(tree: ast.AST) -> Iterator[tuple[int, str]]:
-    """Yield (line, text) for the message argument of every log call."""
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
@@ -52,7 +42,6 @@ def _log_messages(tree: ast.AST) -> Iterator[tuple[int, str]]:
 
 
 def _comments(source: str) -> Iterator[tuple[int, str]]:
-    """Yield (line, text) for every comment token."""
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type == tokenize.COMMENT:
             yield token.start[0], token.string

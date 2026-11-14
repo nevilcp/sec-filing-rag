@@ -1,11 +1,4 @@
-"""EDGAR ingestion pipeline: checkpointing, chunking and indexing.
-
-Responsibilities:
-  - Orchestrate the end-to-end ingestion of SEC filings.
-  - Make runs resumable through a disk-backed checkpoint.
-  - Coordinate embedding generation and vector store updates.
-  - Rebuild the sparse index from the stored corpus after a run.
-"""
+"""EDGAR ingestion pipeline: checkpointing, chunking and indexing."""
 
 from __future__ import annotations
 
@@ -32,26 +25,11 @@ logger = get_logger(__name__)
 
 
 def _today_date_str() -> str:
-    """Return today's UTC date as an ISO 8601 string."""
     return datetime.now(UTC).date().isoformat()
 
 
 def _load_checkpoint(checkpoint_path: Path) -> dict[str, Any]:
-    """Load the ingestion checkpoint, or start an empty one.
-
-    A checkpoint written on an earlier day gets today's date. Its
-    processed_files and indexed_companies carry over unchanged.
-
-    Args:
-        checkpoint_path: Path to the JSON checkpoint file.
-
-    Returns:
-        A dict with 'date', 'processed_files' and 'indexed_companies'
-        keys.
-
-    Raises:
-        json.JSONDecodeError: If the file holds invalid JSON.
-    """
+    """Load checkpoint progress, refreshing its date while preserving completed filings."""
     default = {
         "date": _today_date_str(),
         "processed_files": [],
@@ -77,38 +55,18 @@ def _load_checkpoint(checkpoint_path: Path) -> dict[str, Any]:
 
 
 def _save_checkpoint(checkpoint_path: Path, checkpoint: dict[str, Any]) -> None:
-    """Write the checkpoint as JSON, replacing the file atomically.
-
-    Args:
-        checkpoint_path: Destination path for the JSON file.
-        checkpoint: The checkpoint state to persist.
-    """
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(checkpoint_path, json.dumps(checkpoint, indent=2, ensure_ascii=True))
 
 
 def _iter_sub_batches(items: list[Any], size: int) -> list[list[Any]]:
-    """Split a list into contiguous batches of at most size items.
-
-    Args:
-        items: The list to partition.
-        size: Maximum number of items per batch.
-
-    Returns:
-        The batches, in order.
-    """
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def _build_filing_queue(
     tickers: list[str] | None, processed_files: set[str]
 ) -> list[tuple[str, str, str, dict[str, Any]]]:
-    """List unprocessed filings as (ticker, cik, name, filing) tuples.
-
-    Args:
-        tickers: Optional ticker symbols to restrict the corpus to.
-        processed_files: Accession numbers already in the checkpoint.
-    """
+    """List unprocessed filings as (ticker, cik, name, filing) tuples."""
     companies = get_corpus_companies()
     if tickers:
         lower_tickers = {t.lower() for t in tickers}
@@ -132,15 +90,7 @@ def _build_filing_queue(
 
 
 def _embed_batches(chunks: list[dict[str, Any]], ticker: str) -> None:
-    """Embed chunks in batches, setting an 'embedding' key on success.
-
-    A batch that fails to embed is logged and skipped, which leaves its
-    chunks without an embedding.
-
-    Args:
-        chunks: The chunk dicts to embed, modified in place.
-        ticker: The company ticker, used for log context.
-    """
+    """Attach embeddings to chunks in place, leaving failed batches for a later run."""
     batches = _iter_sub_batches(chunks, config.EMBEDDING_BATCH_SIZE)
     total_batches = len(batches)
 
@@ -173,7 +123,6 @@ def _embed_batches(chunks: list[dict[str, Any]], ticker: str) -> None:
 
 
 def _load_all_documents() -> list[dict[str, Any]]:
-    """Read every stored chunk back from Qdrant as text and metadata."""
     client = get_qdrant_client()
     get_filings_collection()
     all_docs: list[dict[str, Any]] = []
@@ -195,36 +144,7 @@ def _load_all_documents() -> list[dict[str, Any]]:
 
 
 def run_ingestion(tickers: list[str] | None = None) -> int:
-    """Run the end-to-end EDGAR ingestion pipeline.
-
-    For each company in the corpus, fetches recent 10-K filings from
-    EDGAR, extracts the configured sections, splits them into chunks,
-    embeds the chunks in batches and upserts them into Qdrant. Filings
-    already in the checkpoint are skipped. A filing is recorded only
-    when every chunk was embedded, so a partly embedded filing is
-    retried on the next run. After the queue is processed, the BM25
-    index is rebuilt from the full Qdrant corpus. A run with no new
-    filings returns early and skips the rebuild.
-
-    Args:
-        tickers: Optional ticker symbols to restrict ingestion to. If
-            None, every ticker in KNOWN_TICKERS is processed.
-
-    Returns:
-        Always 0. The value is the same when there are no new filings,
-        and failures raise instead of returning a nonzero code.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set, or a ticker
-            cannot be resolved.
-        httpx.HTTPError: If an EDGAR request fails after retries.
-        OSError: If a staged file or the checkpoint cannot be read or
-            written.
-
-    Example:
-        >>> run_ingestion(["AAPL"])
-        0
-    """
+    """Ingest pending filings, checkpoint complete filings, and rebuild BM25 from the stored corpus."""
     checkpoint_path = Path(config.INGEST_CHECKPOINT_PATH)
     checkpoint = _load_checkpoint(checkpoint_path)
     _save_checkpoint(checkpoint_path, checkpoint)
@@ -323,7 +243,6 @@ def run_ingestion(tickers: list[str] | None = None) -> int:
 
 
 def main() -> None:
-    """Run ingestion as a CLI command and exit with its status code."""
     raise SystemExit(run_ingestion())
 
 

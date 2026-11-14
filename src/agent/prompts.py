@@ -1,16 +1,7 @@
-"""Prompt text and builders for the CRAG workflow nodes.
-
-Responsibilities:
-  - Hold the category-specific answer instructions
-  - Build the router, grader, rewriter and generation prompts
-
-Not responsible for:
-  - Invoking models or parsing their replies (see agent/nodes.py).
-"""
+"""Prompt text and builders for the CRAG workflow nodes."""
 
 from __future__ import annotations
 
-# Appended to the generation prompt as the task focus for each category.
 CATEGORY_INSTRUCTIONS = {
     "compliance_check": (
         "Identify and explain the specific regulatory obligations, prohibited conduct, "
@@ -65,14 +56,6 @@ CATEGORY_INSTRUCTIONS = {
 
 
 def router_prompt(query_text: str) -> str:
-    """Build the prompt that classifies a query into a category.
-
-    Args:
-        query_text: The user query to classify.
-
-    Returns:
-        The prompt text.
-    """
     return (
         "You are an expert quantitative compliance routing agent. "
         "Your task is to classify the user's question into exactly one category so the "
@@ -101,15 +84,6 @@ def router_prompt(query_text: str) -> str:
 
 
 def grader_prompt(query_text: str, preview: str) -> str:
-    """Build the prompt that judges if retrieved excerpts are relevant.
-
-    Args:
-        query_text: The user query the excerpts should answer.
-        preview: The formatted excerpt previews to judge.
-
-    Returns:
-        The prompt text.
-    """
     return (
         "You are a strict quantitative compliance retrieval judge for an SEC information system. "
         "Your task is to determine whether the retrieved document excerpts are useful "
@@ -133,14 +107,6 @@ def grader_prompt(query_text: str, preview: str) -> str:
 
 
 def rewrite_prompt(query: str) -> str:
-    """Build the prompt that rewrites a query to improve retrieval.
-
-    Args:
-        query: The query to rewrite.
-
-    Returns:
-        The prompt text.
-    """
     return (
         "You are a quantitative compliance retrieval specialist. The previous retrieval attempt for the "
         "user's query returned irrelevant or insufficient results. Your task is to rewrite "
@@ -164,17 +130,7 @@ def rewrite_prompt(query: str) -> str:
 
 
 def respond_prompt(category: str, context: str, query_text: str) -> str:
-    """Build the generation prompt for the given query category.
-
-    Args:
-        category: The query category. Unknown values use the general
-            instructions.
-        context: The formatted retrieved excerpts, or an empty string.
-        query_text: The user's query as submitted.
-
-    Returns:
-        The prompt text.
-    """
+    """Build the answer prompt, using general instructions for unknown categories."""
     category_instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
     return (
         "<system>\n"

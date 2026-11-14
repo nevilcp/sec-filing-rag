@@ -1,13 +1,4 @@
-"""Pydantic request and response schemas for the SEC compliance RAG API.
-
-Responsibilities:
-  - Define and validate the incoming query request.
-  - Define the outgoing query response and its source citations.
-
-Not responsible for:
-  - Business logic or LLM invocation (see api/routes.py).
-  - Guardrail enforcement (see guardrails/).
-"""
+"""Pydantic request and response schemas for the SEC compliance RAG API."""
 
 from __future__ import annotations
 
@@ -17,12 +8,6 @@ from src.agent.state import QueryCategory
 
 
 class SourceCitation(BaseModel):
-    """A document passage retrieved to support a generated answer.
-
-    The fields are the EDGAR filing provenance metadata stored in Qdrant
-    with each embedded chunk. chunk_text is the passage itself.
-    """
-
     ticker: str
     company_name: str
     form_type: str
@@ -34,20 +19,12 @@ class SourceCitation(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    """Validated inbound payload for the /query endpoint."""
-
     query: str = Field(..., min_length=1, max_length=2000)
     session_id: str
     company_filter: str | None = None
 
 
 class QueryResponse(BaseModel):
-    """Full response envelope returned by the /query endpoint.
-
-    Includes the generated answer, pipeline diagnostic fields, guardrail
-    warnings, and the list of retrieved source citations.
-    """
-
     response: str
     cache_hit: bool
     query_category: QueryCategory

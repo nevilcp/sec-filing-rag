@@ -1,11 +1,4 @@
-"""Unit tests for the EDGAR HTTP client helpers.
-
-Responsibilities:
-  - Check the fiscal year and form type filtering in
-    get_recent_filings, including an empty response.
-  - Check that a missing EDGAR_CONTACT_EMAIL raises and that the
-    User-Agent has the expected format.
-"""
+"""Unit tests for the EDGAR HTTP client helpers."""
 
 from __future__ import annotations
 
@@ -30,7 +23,6 @@ def test_get_user_agent_returns_formatted_string(monkeypatch):
 
 
 def _make_filings_payload(periods: list[str], form_type: str = "10-K") -> dict:
-    """Build a mock EDGAR submissions API response."""
     n = len(periods)
     return {
         "filings": {
@@ -47,7 +39,6 @@ def _make_filings_payload(periods: list[str], form_type: str = "10-K") -> dict:
 
 @mock.patch("src.rag.edgar_client._edgar_get_json")
 def test_get_recent_filings_filters_by_fiscal_year(mock_get_json):
-    """Return only filings whose reportDate matches a target year."""
     mock_get_json.return_value = _make_filings_payload(["2023-12-31", "2024-12-31", "2022-12-31"])
 
     with mock.patch("src.core.config.EDGAR_FISCAL_YEARS", ["2024"]):
@@ -61,7 +52,6 @@ def test_get_recent_filings_filters_by_fiscal_year(mock_get_json):
 
 @mock.patch("src.rag.edgar_client._edgar_get_json")
 def test_get_recent_filings_multi_year(mock_get_json):
-    """Multiple target years return matching filings for each year."""
     mock_get_json.return_value = _make_filings_payload(["2023-12-31", "2024-12-31", "2021-12-31"])
 
     with mock.patch("src.core.config.EDGAR_FISCAL_YEARS", ["2023", "2024"]):
@@ -76,7 +66,6 @@ def test_get_recent_filings_multi_year(mock_get_json):
 
 @mock.patch("src.rag.edgar_client._edgar_get_json")
 def test_get_recent_filings_wrong_form_type_excluded(mock_get_json):
-    """Filings with a different form type than 10-K are excluded."""
     mock_get_json.return_value = _make_filings_payload(["2024-12-31"], form_type="10-Q")
 
     with mock.patch("src.core.config.EDGAR_FISCAL_YEARS", ["2024"]):
@@ -89,7 +78,6 @@ def test_get_recent_filings_wrong_form_type_excluded(mock_get_json):
 
 @mock.patch("src.rag.edgar_client._edgar_get_json")
 def test_get_recent_filings_empty_response(mock_get_json):
-    """Returns empty list when EDGAR response has no filings."""
     mock_get_json.return_value = {}
     from src.rag import edgar_client
 

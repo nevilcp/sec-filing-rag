@@ -1,14 +1,4 @@
-"""Static lookup tables for the SEC compliance RAG system.
-
-Responsibilities:
-  - Define the ticker symbols in the corpus (KNOWN_TICKERS).
-  - Define the SEC/CFR regulation names the retriever recognizes in a
-    query (KNOWN_REGULATIONS).
-
-Not responsible for:
-  - CIK resolution (see core/corpus.py).
-  - Retrieval filtering logic (see rag/retriever.py).
-"""
+"""Static lookup tables for the SEC compliance RAG system."""
 
 KNOWN_REGULATIONS = [
     "Rule 10b-5",
@@ -25,8 +15,7 @@ KNOWN_REGULATIONS = [
 ]
 
 
-# Tickers to ingest. Read by core/corpus.py to build the corpus and by
-# rag/retriever.py to detect a company named in a query.
+# Shared by corpus ingestion and query ticker detection.
 KNOWN_TICKERS = [
     "AAPL",
     "MSFT",

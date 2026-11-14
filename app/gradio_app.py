@@ -1,13 +1,4 @@
-"""Gradio frontend for the SEC compliance RAG API.
-
-Responsibilities:
-  - Provide a chat interface for compliance analysts.
-  - Render HTML citation cards and a legal-advice disclaimer.
-  - Relay user input to the FastAPI backend over HTTP.
-
-Dependencies:
-  - A running API server at config.API_BASE_URL.
-"""
+"""Gradio frontend for the SEC compliance RAG API."""
 
 import html
 import uuid
@@ -39,7 +30,6 @@ _TICKER_PALETTE = [
 
 
 def _ticker_colours(ticker: str, seen: dict) -> tuple[str, str]:
-    """Return (text_colour, bg_colour) for a ticker within a panel."""
     if ticker not in seen:
         idx = len(seen) % len(_TICKER_PALETTE)
         seen[ticker] = _TICKER_PALETTE[idx]
@@ -47,10 +37,7 @@ def _ticker_colours(ticker: str, seen: dict) -> tuple[str, str]:
 
 
 def _edgar_url(accession_number: str) -> str:
-    """Build the EDGAR filing index URL from an accession number.
-
-    The CIK in the URL is taken from the accession number prefix.
-    """
+    """Build the filing index URL using the accession number prefix as the CIK."""
     clean = accession_number.replace("-", "")
     cik = clean[:10].lstrip("0")
     return f"https://www.sec.gov/Archives/edgar/data/{cik}/{clean}/{accession_number}-index.htm"
@@ -200,18 +187,7 @@ _PANEL_STYLE = """
 
 
 def build_citations_html(sources: list[dict]) -> str:
-    """Render a styled HTML citation panel from SourceCitation dicts.
-
-    Repeated (accession, section) pairs are shown once. All values from
-    the API are HTML-escaped.
-
-    Args:
-        sources: Citation metadata dicts from the API response.
-
-    Returns:
-        An HTML string with one card per distinct source, or an empty
-        state panel when there are none.
-    """
+    """Render escaped citation cards, deduplicated by accession number and section."""
     if not sources:
         return """
         <div class="citation-panel">
@@ -310,28 +286,11 @@ _LEGAL_KEYWORDS = (
 
 
 def _has_legal_warning(warnings: list[str]) -> bool:
-    """Return True if any warning contains a legal-advice keyword.
-
-    Args:
-        warnings: Warning strings from the backend.
-
-    Returns:
-        True if a keyword in _LEGAL_KEYWORDS is present.
-    """
     lowered = " ".join(warnings).lower()
     return any(kw in lowered for kw in _LEGAL_KEYWORDS)
 
 
 def build_legal_banner_html(warnings: list[str]) -> str:
-    """Build the legal-advice disclaimer banner as HTML.
-
-    Args:
-        warnings: Warning strings from the backend.
-
-    Returns:
-        The banner HTML, or an empty string when no warning calls for
-        it.
-    """
     if not _has_legal_warning(warnings):
         return ""
 
@@ -379,14 +338,7 @@ def build_legal_banner_html(warnings: list[str]) -> str:
 
 
 def get_companies() -> list[str]:
-    """Fetch the indexed company list from the corpus status endpoint.
-
-    Falls back to ['All companies'] if the backend is unreachable or
-    returns an error, so the UI stays usable while the API starts.
-
-    Returns:
-        The tickers, preceded by 'All companies'.
-    """
+    """Fetch indexed tickers, falling back to 'All companies' if the API is unavailable."""
     try:
         response = requests.get(STATUS_URL, timeout=REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 200:
@@ -398,7 +350,6 @@ def get_companies() -> list[str]:
 
 
 def trigger_ingestion() -> None:
-    """Start a background ingestion job through the backend API."""
     try:
         response = requests.post(INGEST_URL, timeout=REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 200:
@@ -410,12 +361,6 @@ def trigger_ingestion() -> None:
 
 
 def clear_chat() -> tuple:
-    """Reset the chat UI to its initial empty state.
-
-    Returns:
-        A tuple of (empty_history, new_session_id, debug_placeholder,
-        empty_citations_html, empty_banner_html).
-    """
     return [], str(uuid.uuid4()), NO_DEBUG_INFO, _EMPTY_CITATIONS, ""
 
 
@@ -425,22 +370,7 @@ def submit_query(
     sess_id: str,
     comp_filter: str,
 ) -> tuple:
-    """Send a user query to the backend API and update the chat UI.
-
-    Connection errors, 400 guardrail rejections, other non-200 responses
-    and invalid JSON are reported as an error message in the chat
-    history instead of raising into the Gradio runtime.
-
-    Args:
-        user_text: The raw text entered by the user.
-        history: The current Gradio chatbot message history.
-        sess_id: The session UUID, sent as the LangGraph thread id.
-        comp_filter: The selected company filter dropdown value.
-
-    Returns:
-        A tuple of (cleared_input, updated_history, debug_markdown,
-        citations_html, legal_banner_html).
-    """
+    """Submit a query and display API failures in the chat history."""
     if not user_text:
         return "", history, NO_DEBUG_INFO, _EMPTY_CITATIONS, ""
 
@@ -513,14 +443,7 @@ def submit_query(
 
 
 def build_demo() -> gr.Blocks:
-    """Build the Gradio UI.
-
-    Fetches the company list from the backend, so call it at launch time
-    rather than at import time.
-
-    Returns:
-        The assembled Gradio Blocks app.
-    """
+    """Build the Gradio UI and fetch the company choices from the API."""
     with gr.Blocks(title="SEC Filing RAG") as demo:
         gr.Markdown("# SEC Filing RAG")
         gr.Markdown("Frontend client for FastAPI backend")
@@ -569,7 +492,6 @@ def build_demo() -> gr.Blocks:
 
 
 def main() -> None:
-    """Launch the Gradio application on config.GRADIO_PORT."""
     build_demo().launch(
         server_name=config.GRADIO_HOST,
         server_port=config.GRADIO_PORT,

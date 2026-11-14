@@ -1,11 +1,4 @@
-"""LangGraph node implementations for the SEC compliance workflow.
-
-Responsibilities:
-  - Implement the business logic of each LangGraph node.
-  - Classify queries so the answer style fits the question.
-  - Run hybrid retrieval, relevance grading and query rewriting.
-  - Write grounded final answers from the retrieved context.
-"""
+"""LangGraph node implementations for the SEC compliance workflow."""
 
 from __future__ import annotations
 
@@ -34,38 +27,15 @@ logger = get_logger(__name__)
 
 @locked_singleton
 def _cache() -> SemanticCache:
-    """Return the process-lifetime SemanticCache singleton.
-
-    Deferred initialization avoids opening the Qdrant connection at
-    import time, which would fail if the vector store is unavailable.
-
-    Returns:
-        The shared SemanticCache instance.
-    """
     return SemanticCache()
 
 
 def _original_query(state: ComplianceState) -> str:
-    """Return the user's query as submitted, before any CRAG rewrite."""
     return state.get("original_query") or state["query"]
 
 
 def process_input(state: ComplianceState) -> dict[str, Any]:
-    """Classify the query into a category that selects the answer style.
-
-    Falls back to 'general' when the model reply cannot be parsed.
-
-    Args:
-        state: Current graph state containing the user query.
-
-    Returns:
-        A state update holding the query_category.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        RateLimitExhausted: If the prompt can never fit the router
-            model's token limit.
-    """
+    """Classify the query's answer style, defaulting to 'general' for unrecognized replies."""
     query_text = state["query"]
     prompt = router_prompt(query_text)
     content = invoke_with_rate_limit(
@@ -99,14 +69,7 @@ def process_input(state: ComplianceState) -> dict[str, Any]:
 
 
 def cache_check(state: ComplianceState) -> dict[str, Any]:
-    """Look up the original query in the semantic cache.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        A state update with cache_hit, plus final_response on a hit.
-    """
+    """Look up the original query and return a state update for a cache hit or miss."""
     cached = _cache().lookup(_original_query(state))
     if cached is not None:
         logger.info("cache_check hit")
@@ -116,22 +79,7 @@ def cache_check(state: ComplianceState) -> dict[str, Any]:
 
 
 def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
-    """Retrieve documents and grade how relevant they are.
-
-    The context counts as relevant only if it passes both a score check
-    (mean and top-1 reranker score against config thresholds) and an LLM
-    judge that reads previews of the first five documents.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        A state update with retrieved_docs and context_relevance.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        FileNotFoundError: If the BM25 index has not been built.
-    """
+    """Grade retrieved context using both reranker scores and an LLM verdict."""
     query_text = state["query"]
     docs = retrieve(query_text, company_filter=state.get("company_filter"))
 
@@ -188,14 +136,6 @@ def retrieve_and_reason(state: ComplianceState) -> dict[str, Any]:
 
 
 def grade_retrieval(state: ComplianceState) -> dict[str, Any]:
-    """Copy context_relevance into retrieval_grade for the router.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        A state update holding the retrieval_grade.
-    """
     context_relevance = state.get("context_relevance", "irrelevant")
     logger.info(
         "grade_retrieval complete",
@@ -205,23 +145,7 @@ def grade_retrieval(state: ComplianceState) -> dict[str, Any]:
 
 
 def rewrite_query(state: ComplianceState) -> dict[str, Any]:
-    """Rewrite the query to improve retrieval.
-
-    Runs after a failed retrieval. The rewrite uses formal SEC
-    terminology and explicit entity names. Once the limit
-    config.MAX_CRAG_REWRITES is reached, it only sets retrieval_grade
-    to 'relevant' so the graph moves on to respond.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        A state update with the rewritten query and the incremented
-        rewrite_count.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-    """
+    """Rewrite a failed query until the configured rewrite limit is reached."""
     rewrite_count = int(state.get("rewrite_count", 0))
     if rewrite_count >= config.MAX_CRAG_REWRITES:
         logger.info("rewrite_query max reached; forcing relevant")
@@ -252,7 +176,6 @@ def rewrite_query(state: ComplianceState) -> dict[str, Any]:
 
 
 def _format_context(docs: list[RetrievedDoc]) -> str:
-    """Join retrieved chunks into the context block of the prompt."""
     formatted_docs = []
     for doc in docs:
         meta = _doc_meta(doc)
@@ -265,7 +188,6 @@ def _format_context(docs: list[RetrievedDoc]) -> str:
 
 
 def _format_sources(docs: list[RetrievedDoc]) -> str:
-    """Return the Sources footer for an answer, or an empty string."""
     if not docs:
         return ""
     sources_list = []
@@ -283,24 +205,7 @@ def _format_sources(docs: list[RetrievedDoc]) -> str:
 
 
 def respond(state: ComplianceState) -> dict[str, Any]:
-    """Write the final answer for the query.
-
-    A cache hit returns the cached text unchanged. An irrelevant grade
-    returns a fixed "could not find" message. Otherwise the generation
-    model answers from the retrieved context in the style of the query
-    category, a Sources footer is appended and the result is cached
-    under the original query.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        A state update with final_response, which includes the Sources
-        footer, and an empty retrieved_docs for the irrelevant case.
-
-    Raises:
-        RuntimeError: If GEMINI_API_KEY is not set.
-    """
+    """Return cached text, report insufficient context, or generate and cache a grounded answer."""
     query_text = _original_query(state)
     docs = state.get("retrieved_docs", [])
 

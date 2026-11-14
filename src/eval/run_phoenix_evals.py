@@ -1,18 +1,4 @@
-"""Arize Phoenix evaluation runner using a Groq-hosted judge model.
-
-Responsibilities:
-  - Connect to the local Phoenix server and fetch recorded traces.
-  - Run answer-relevance classification over CHAIN-level spans.
-  - Log evaluation results back to Phoenix as span annotations.
-
-Not responsible for:
-  - Defining evaluation prompt templates (see eval/prompts.py).
-  - Starting the Phoenix server (see api/run.py or the phoenix CLI).
-
-Dependencies:
-  - A running Phoenix server with recorded traces.
-  - GROQ_API_KEY must be set in the environment.
-"""
+"""Arize Phoenix evaluation runner using a Groq-hosted judge model."""
 
 import asyncio
 import os
@@ -32,23 +18,7 @@ logger = get_logger(__name__)
 
 
 async def main_async() -> None:
-    """Fetch traces from Phoenix and run LLM-as-a-judge evaluations.
-
-    Connects to the local Phoenix instance, retrieves all CHAIN spans
-    from the Phoenix project, runs an answer-relevance classification
-    pass with config.EVAL_MODEL and logs the scored annotations back to
-    Phoenix. It returns early, after logging, if there are no traces or
-    no CHAIN spans.
-
-    Concurrency is limited by config.EVAL_CONCURRENCY to respect Groq
-    free-tier rate limits. Context relevance and faithfulness
-    evaluations are omitted because they need
-    attributes.retrieval.documents on the CHAIN span, which depends on
-    the instrumentation configuration.
-
-    Raises:
-        KeyError: If GROQ_API_KEY is not set.
-    """
+    """Evaluate answer relevance on recorded CHAIN spans and upload annotations to Phoenix."""
     base_url = f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}"
     logger.info("Connecting to Phoenix Client at %s...", base_url)
     px_client = Client(base_url=base_url)
@@ -101,11 +71,6 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    """Run the async evaluation loop as a CLI command.
-
-    Configures logging first, because nothing else does for this entry
-    point and the progress messages would otherwise be dropped.
-    """
     configure_logging()
     asyncio.run(main_async())
 

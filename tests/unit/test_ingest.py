@@ -1,12 +1,4 @@
-"""Unit tests for the EDGAR ingestion pipeline.
-
-Responsibilities:
-  - Check checkpoint load, save and stale-date handling, including that
-    an interrupted write keeps the previous file.
-  - Check the sub-batch splitter boundaries.
-  - Check that a filing is marked processed only when every embedding
-    batch succeeds.
-"""
+"""Unit tests for the EDGAR ingestion pipeline."""
 
 from __future__ import annotations
 
@@ -21,7 +13,6 @@ from src.rag.ingest import _iter_sub_batches, _load_checkpoint, _save_checkpoint
 
 
 def test_load_checkpoint_missing_file(tmp_path):
-    """Returns a fresh default dict when no checkpoint file exists."""
     cp = _load_checkpoint(tmp_path / "missing.json")
     assert cp["processed_files"] == []
     assert cp["indexed_companies"] == []
@@ -29,7 +20,6 @@ def test_load_checkpoint_missing_file(tmp_path):
 
 
 def test_load_checkpoint_empty_file(tmp_path):
-    """Handles an empty checkpoint file gracefully."""
     path = tmp_path / "checkpoint.json"
     path.write_text("", encoding="utf-8")
     cp = _load_checkpoint(path)
@@ -37,7 +27,6 @@ def test_load_checkpoint_empty_file(tmp_path):
 
 
 def test_save_and_load_checkpoint_roundtrip(tmp_path):
-    """Saved checkpoint survives a load/save round-trip intact."""
     path = tmp_path / "checkpoint.json"
     data = {
         "date": "2024-01-01",
@@ -51,7 +40,6 @@ def test_save_and_load_checkpoint_roundtrip(tmp_path):
 
 
 def test_load_checkpoint_stale_date_is_reset(tmp_path):
-    """A checkpoint from a past date gets today's date."""
     path = tmp_path / "checkpoint.json"
     stale = {
         "date": "2020-01-01",
@@ -100,7 +88,6 @@ def test_save_checkpoint_interrupted_write_keeps_previous_file(tmp_path):
 
 
 def _run_ingestion_with_two_batches(tmp_path, monkeypatch, embed_side_effect):
-    """Run ingestion for one filing that needs two embedding batches."""
     checkpoint_path = tmp_path / "checkpoint.json"
     html_path = tmp_path / "filing.html"
     html_path.write_text("<html></html>", encoding="utf-8")

@@ -1,11 +1,4 @@
-"""FastAPI route handlers for the SEC compliance RAG API.
-
-Responsibilities:
-  - Expose HTTP endpoints for querying, ingestion, health and corpus
-    status.
-  - Wrap the LangGraph run in the input and output guardrails.
-  - Keep the process-wide counters reported by /metrics.
-"""
+"""FastAPI route handlers for the SEC compliance RAG API."""
 
 from __future__ import annotations
 
@@ -35,7 +28,6 @@ router = APIRouter()
 
 
 def _run_ingestion_background() -> None:
-    """Run the ingestion pipeline in a background task."""
     try:
         code = run_ingestion()
         logger.info(
@@ -48,7 +40,6 @@ def _run_ingestion_background() -> None:
 
 
 def _build_initial_state(payload: QueryRequest) -> dict[str, Any]:
-    """Return the starting graph state for a query request."""
     return {
         "query": payload.query,
         "original_query": payload.query,
@@ -63,7 +54,6 @@ def _build_initial_state(payload: QueryRequest) -> dict[str, Any]:
 
 
 def _to_citations(docs: list[RetrievedDoc]) -> list[SourceCitation]:
-    """Convert retrieved chunks into API source citations."""
     citations = []
     for doc in docs:
         meta = _doc_meta(doc)
@@ -83,7 +73,6 @@ def _to_citations(docs: list[RetrievedDoc]) -> list[SourceCitation]:
 
 
 def _record_metrics(metrics: dict[str, int], cache_hit: bool, rewrite_count: int) -> None:
-    """Add one served query to the process-wide counters."""
     metrics["total_queries_served"] += 1
     if cache_hit:
         metrics["cache_hits"] += 1
@@ -92,22 +81,7 @@ def _record_metrics(metrics: dict[str, int], cache_hit: bool, rewrite_count: int
 
 @router.post("/query", response_model=QueryResponse)
 def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
-    """Answer a compliance query through the RAG graph.
-
-    Validates the input, runs the LangGraph workflow, then sanitizes the
-    answer with the output guard.
-
-    Args:
-        payload: The user query request.
-        request: The FastAPI request object, which carries the compiled
-            graph and the metrics on app.state.
-
-    Returns:
-        The answer with retrieved citations and any guardrail warnings.
-
-    Raises:
-        HTTPException: 400 if the input guard rejects the query.
-    """
+    """Validate a query, run the graph, and sanitize the answer before returning it."""
     with chain_span("query_endpoint", payload.query) as span:
         is_valid, reason = validate_input(payload.query)
         _audit_log.info(
@@ -177,23 +151,12 @@ def query_endpoint(payload: QueryRequest, request: Request) -> QueryResponse:
 
 @router.get("/health")
 def health_endpoint() -> dict[str, str]:
-    """Return a minimal liveness probe response."""
     return {"status": "ok", "version": "1.0.0"}
 
 
 @router.get("/metrics")
 def metrics_endpoint(request: Request) -> dict[str, Any]:
-    """Return aggregate runtime metrics for the current server process.
-
-    Reports the query count, cache hit rate, average CRAG rewrite count
-    and the current usage of the rate limiter the endpoint tracks.
-
-    Args:
-        request: The FastAPI request object carrying app.state.metrics.
-
-    Returns:
-        A dict of metric names to their current values.
-    """
+    """Report process query metrics and current workhorse model rate-limit usage."""
     metrics = request.app.state.metrics
     total = int(metrics.get("total_queries_served", 0))
     cache_hits = int(metrics.get("cache_hits", 0))
@@ -221,18 +184,7 @@ def metrics_endpoint(request: Request) -> dict[str, Any]:
 
 @router.get("/corpus/status")
 def corpus_status() -> dict[str, Any]:
-    """Return the current state of the indexed document corpus.
-
-    Reads the ingestion checkpoint for company and filing metadata, and
-    queries Qdrant for the total chunk count.
-
-    Returns:
-        A dict containing total_chunks, indexed_companies, last_updated,
-        and form_types_indexed.
-
-    Raises:
-        HTTPException: 503 if the corpus has not yet been initialized.
-    """
+    """Read checkpoint metadata and the stored chunk count, returning 503 before initialization."""
     checkpoint_path = config.INGEST_CHECKPOINT_PATH
     if not os.path.exists(checkpoint_path):
         raise HTTPException(status_code=503, detail="Corpus not yet initialized")
@@ -260,16 +212,6 @@ def corpus_status() -> dict[str, Any]:
 
 @router.post("/ingest/trigger")
 def trigger_ingestion(background_tasks: BackgroundTasks) -> dict[str, str]:
-    """Enqueue an asynchronous ingestion run and return immediately.
-
-    The ingestion pipeline runs as a background task so the HTTP
-    response is not blocked. Progress is logged to stdout.
-
-    Args:
-        background_tasks: FastAPI's background task runner.
-
-    Returns:
-        A dict confirming the ingestion job has been enqueued.
-    """
+    """Enqueue ingestion as a background task and return immediately."""
     background_tasks.add_task(_run_ingestion_background)
     return {"status": "ingestion_started"}

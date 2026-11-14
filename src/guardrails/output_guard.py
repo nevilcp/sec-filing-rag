@@ -1,15 +1,4 @@
-"""Output guardrails: PII anonymization and a policy classifier.
-
-Responsibilities:
-  - Redact PII from generated responses before they reach the user.
-  - Flag responses that read as definitive legal advice, using
-    GPT-OSS-Safeguard-20B on Groq.
-  - Return warnings for flagged responses. It never blocks one.
-
-Dependencies:
-  - GROQ_API_KEY, for the policy classifier.
-  - The spaCy model en_core_web_lg, loaded through guardrails/pii.py.
-"""
+"""Output guardrails: PII anonymization and a policy classifier."""
 
 from __future__ import annotations
 
@@ -29,18 +18,7 @@ logger = get_logger(__name__)
 
 
 def _anonymize_pii(text: str) -> tuple[str, list[str]]:
-    """Replace PII in the text with labelled placeholders.
-
-    Each detected entity is replaced with a token such as
-    <EMAIL_ADDRESS>, using Presidio's replace operator.
-
-    Args:
-        text: The text to scan and anonymize.
-
-    Returns:
-        A tuple of (anonymized_text, detected_entity_types). Text with
-        no PII comes back unchanged with an empty list.
-    """
+    """Replace detected PII with entity placeholders and return the affected entity types."""
     detections = analyzer().analyze(text=text, language="en", entities=PII_ENTITIES)
     if not detections:
         return text, []
@@ -57,7 +35,6 @@ def _anonymize_pii(text: str) -> tuple[str, list[str]]:
     return anonymized.text, entity_types
 
 
-# Policy classifier prompt. The {text} slot takes the response to check.
 _LEGAL_ADVICE_PROMPT = (
     "You are a quantitative compliance risk officer and content-safety classifier for an SEC compliance information system. "
     "Your task is to determine whether the response below violates the system's policy.\n\n"
@@ -84,22 +61,6 @@ _LEGAL_ADVICE_PROMPT = (
 
 
 def _is_definitive_legal_advice(text: str) -> bool:
-    """Classify the text with GPT-OSS-Safeguard-20B.
-
-    Args:
-        text: The generated response text.
-
-    Returns:
-        True if the text violates the informational-only policy.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        RateLimitExhausted: If the prompt can never fit the model's
-            token limit.
-        Exception: Errors from the Groq call propagate, for example an
-            HTTP 413 when a long response exceeds the model's
-            tokens-per-minute limit.
-    """
     prompt = _LEGAL_ADVICE_PROMPT.format(text=text)
     decision = (
         invoke_with_rate_limit(
@@ -114,28 +75,7 @@ def _is_definitive_legal_advice(text: str) -> bool:
 
 
 def validate_output(response: str) -> tuple[str, list[str]]:
-    """Anonymize PII in a response and flag legal-advice language.
-
-    An empty or whitespace-only response is returned as is. The text
-    is never blocked: a policy violation only adds a warning.
-
-    Args:
-        response: The generated response text.
-
-    Returns:
-        A tuple of (sanitized_response, warnings). PII in the response
-        is replaced by placeholders.
-
-    Raises:
-        RuntimeError: If GROQ_API_KEY is not set.
-        Exception: Errors from the policy classifier call propagate to
-            the caller (see _is_definitive_legal_advice).
-
-    Example:
-        >>> text, warnings = validate_output("Contact jo@example.com")
-        >>> text
-        'Contact <EMAIL_ADDRESS>'
-    """
+    """Anonymize PII and return policy warnings without blocking the response."""
     with chain_span("validate_output", response) as span:
         warnings: list[str] = []
 

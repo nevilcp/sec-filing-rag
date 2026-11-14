@@ -1,13 +1,4 @@
-"""EDGAR HTTP client for filing discovery and document acquisition.
-
-Responsibilities:
-  - Query the EDGAR submissions API for recent filings.
-  - Download primary filing documents and stage them on disk.
-  - Throttle requests to the SEC rate limit and retry 429 and 503.
-
-Dependencies:
-  - EDGAR_CONTACT_EMAIL must be set before any request.
-"""
+"""EDGAR HTTP client for filing discovery and document acquisition."""
 
 from __future__ import annotations
 
@@ -26,7 +17,6 @@ from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# HTTP statuses that signal transient SEC throttling.
 _RETRYABLE_STATUS = (429, 503)
 
 _LAST_REQUEST_TIME: float = 0.0
@@ -34,7 +24,6 @@ _THROTTLE_LOCK = threading.Lock()
 
 
 def _throttle() -> None:
-    """Sleep as needed to stay under the configured request rate."""
     global _LAST_REQUEST_TIME
     with _THROTTLE_LOCK:
         now = time.time()
@@ -46,18 +35,6 @@ def _throttle() -> None:
 
 
 def _is_retryable_http_error(exc: BaseException) -> bool:
-    """Return True for retryable HTTP status errors from EDGAR.
-
-    The codes in _RETRYABLE_STATUS (429 and 503) signal transient
-    throttling, so they are retried with exponential backoff instead
-    of being raised immediately.
-
-    Args:
-        exc: The exception raised by the HTTP call.
-
-    Returns:
-        True if the error warrants a retry.
-    """
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in _RETRYABLE_STATUS
     return False
@@ -74,24 +51,7 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
 )
 def _edgar_get(url: str) -> httpx.Response:
-    """Throttle, then GET a URL from EDGAR with the required headers.
-
-    Retries 429 and 503 responses with exponential backoff. Throttling
-    runs before each HTTP call to respect the SEC's request-rate policy
-    instead of relying only on reactive backoff.
-
-    Args:
-        url: The fully-qualified EDGAR URL to fetch.
-
-    Returns:
-        The successful HTTP response.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-        httpx.HTTPStatusError: On non-retryable HTTP errors, or when
-            retries on 429 and 503 are exhausted.
-        httpx.RequestError: If the request fails at the network level.
-    """
+    """Throttle EDGAR requests and retry HTTP 429 and 503 responses with backoff."""
     _throttle()
     headers = {"User-Agent": _get_user_agent(), "Accept-Encoding": "gzip, deflate"}
     logger.debug("Fetching EDGAR URL %s", url)
@@ -102,60 +62,15 @@ def _edgar_get(url: str) -> httpx.Response:
 
 
 def _edgar_get_json(url: str) -> dict[str, Any]:
-    """Fetch a JSON document from an EDGAR endpoint and parse it.
-
-    Args:
-        url: The fully-qualified EDGAR API URL to fetch.
-
-    Returns:
-        The parsed JSON response.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set, or the body is
-            not valid JSON.
-        httpx.HTTPError: On request failure (see _edgar_get).
-    """
     return _edgar_get(url).json()
 
 
 def _edgar_get_text(url: str) -> str:
-    """Fetch a raw text document from an EDGAR endpoint.
-
-    Args:
-        url: The fully-qualified EDGAR document URL to fetch.
-
-    Returns:
-        The raw response body as a string.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-        httpx.HTTPError: On request failure (see _edgar_get).
-    """
     return _edgar_get(url).text
 
 
 def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) -> list[dict[str, Any]]:
-    """Return recent filings that match the target fiscal years.
-
-    Keeps filings of the given form type whose report date (the fiscal
-    year end, for example '2024-12-31') starts with one of the years in
-    config.EDGAR_FISCAL_YEARS. The form type must also be listed in
-    config.EDGAR_TARGET_FORM_TYPES.
-
-    Args:
-        cik: The company's Central Index Key, with or without leading
-            zeros.
-        form_type: Target filing form, for example '10-K'.
-        max_results: Maximum number of filings to return.
-
-    Returns:
-        Filing metadata dicts with 'accession_number', 'filing_date',
-        'period_of_report', 'form_type' and 'primary_document' keys.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-        httpx.HTTPError: If the submissions request fails.
-    """
+    """Select recent filings whose report year and form match the configured targets."""
     url = f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"
     data = _edgar_get_json(url)
 
@@ -198,20 +113,6 @@ def get_recent_filings(cik: str, form_type: str = "10-K", max_results: int = 1) 
 
 
 def download_primary_document(cik: str, accession_number: str, filename: str) -> str:
-    """Download the raw HTML content of a filing's primary document.
-
-    Args:
-        cik: The company's CIK, with or without leading zeros.
-        accession_number: The filing's unique accession number.
-        filename: The primary document filename from the filing index.
-
-    Returns:
-        The raw HTML content of the document.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-        httpx.HTTPError: If the download fails.
-    """
     accession_clean = accession_number.replace("-", "")
     cik_clean = str(int(cik))
 
@@ -220,27 +121,7 @@ def download_primary_document(cik: str, accession_number: str, filename: str) ->
 
 
 def stage_filing(cik: str, ticker: str, accession_number: str, filename: str, staging_dir: Path) -> Path:
-    """Download a filing's primary document into the staging directory.
-
-    Skips the download if the target file already exists. The file is
-    written atomically, so an interrupted run never leaves a partial
-    file behind.
-
-    Args:
-        cik: The company's CIK, with or without leading zeros.
-        ticker: The company ticker symbol, used to name the subfolder.
-        accession_number: The filing's unique identifier.
-        filename: The primary document's filename from the filing index.
-        staging_dir: Root directory for the downloaded HTML files.
-
-    Returns:
-        The path to the staged HTML file, under staging_dir.
-
-    Raises:
-        ValueError: If EDGAR_CONTACT_EMAIL is not set.
-        httpx.HTTPError: If the download fails.
-        OSError: If the file cannot be written.
-    """
+    """Stage a filing as UTF-8 HTML, reusing any existing staged file."""
     ticker_dir = staging_dir / ticker.upper()
     ticker_dir.mkdir(parents=True, exist_ok=True)
 

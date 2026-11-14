@@ -1,11 +1,4 @@
-"""Unit tests for the multi-tier EDGAR HTML section extractor.
-
-Responsibilities:
-  - Check anchor, heading and plain-text extraction, and the
-    full-text fallback.
-  - Check that short lines and numeric rows are removed, that the
-    hidden iXBRL header is dropped, and that tagged figures are kept.
-"""
+"""Unit tests for the multi-tier EDGAR HTML section extractor."""
 
 from bs4 import BeautifulSoup
 

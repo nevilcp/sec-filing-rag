@@ -1,8 +1,4 @@
-"""Thread-safe lazy singletons.
-
-Responsibilities:
-  - Provide a decorator that builds a value once and shares it
-"""
+"""Thread-safe lazy singletons."""
 
 from __future__ import annotations
 
@@ -15,19 +11,7 @@ T = TypeVar("T")
 
 
 def locked_singleton(factory: Callable[[], T]) -> Callable[[], T]:
-    """Cache the result of a zero-argument factory behind a lock.
-
-    The factory runs on the first call only. Concurrent first calls wait
-    on the lock instead of building the value twice (double-checked
-    locking). If the factory raises, nothing is cached and the next call
-    retries. The wrapper gains a cache_clear() method for tests.
-
-    Args:
-        factory: A function with no arguments that builds the value.
-
-    Returns:
-        A function with the same name that returns the shared value.
-    """
+    """Cache a zero-argument factory behind a lock and expose cache_clear() for tests."""
     lock = threading.Lock()
     holder: list[T] = []
 

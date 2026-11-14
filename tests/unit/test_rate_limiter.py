@@ -1,11 +1,4 @@
-"""Unit tests for the thread-safe sliding window rate limiter.
-
-Responsibilities:
-  - Check the token estimate and the per-model limit lookup.
-  - Check that the request and token limits, the cooldown and window
-    purging behave as documented.
-  - Check the shared per-model limiter cache.
-"""
+"""Unit tests for the thread-safe sliding window rate limiter."""
 
 from unittest import mock
 

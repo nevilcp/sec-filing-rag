@@ -1,8 +1,4 @@
-"""Unit tests for the Gradio citation panel.
-
-Responsibilities:
-  - Verify values from the API are escaped before they reach HTML.
-"""
+"""Unit tests for the Gradio citation panel."""
 
 from app.gradio_app import build_citations_html
 

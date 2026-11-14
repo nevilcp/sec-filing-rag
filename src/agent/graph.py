@@ -1,14 +1,4 @@
-"""LangGraph assembly for the SEC compliance CRAG workflow.
-
-Responsibilities:
-  - Define the StateGraph topology for the CRAG agent pipeline.
-  - Wire conditional routing logic to the nodes.
-  - Compile the graph with an in-memory checkpointer.
-
-Not responsible for:
-  - Node business logic (see agent/nodes.py).
-  - Routing predicate definitions (see agent/router.py).
-"""
+"""LangGraph assembly for the SEC compliance CRAG workflow."""
 
 from __future__ import annotations
 
@@ -29,24 +19,7 @@ from src.agent.state import ComplianceState
 
 
 def compile_graph() -> CompiledStateGraph:
-    """Compile the LangGraph state machine for the CRAG workflow.
-
-    The flow is cache_check, then either respond (cache hit) or
-    process_input, retrieve_and_reason and grade_retrieval. Irrelevant
-    results loop through rewrite_query until the rewrite limit, then
-    respond runs. Checkpoints are kept per thread_id in process memory
-    and are lost on restart. Nodes do not read earlier turns.
-
-    Returns:
-        The compiled graph, ready for graph.invoke().
-
-    Example:
-        >>> graph = compile_graph()
-        >>> config = {"configurable": {"thread_id": "session-1"}}
-        >>> result = graph.invoke(initial_state, config=config)
-        >>> result["final_response"]
-        '...'
-    """
+    """Compile the CRAG workflow with checkpoints held in process memory."""
     graph_builder = StateGraph(ComplianceState)
 
     graph_builder.add_node("process_input", process_input)

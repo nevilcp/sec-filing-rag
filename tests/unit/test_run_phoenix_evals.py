@@ -1,9 +1,4 @@
-"""Unit tests for the Phoenix evaluation CLI entry point.
-
-Responsibilities:
-  - Verify that logging is configured before the evaluation starts, so
-    its progress messages are not dropped.
-"""
+"""Unit tests for the Phoenix evaluation CLI entry point."""
 
 from unittest import mock
 

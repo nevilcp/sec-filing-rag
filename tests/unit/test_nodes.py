@@ -1,12 +1,4 @@
-"""Unit tests for the LangGraph nodes.
-
-Responsibilities:
-  - Check query categorization, including unparseable model replies.
-  - Check retrieval grading, which needs both the score check and the
-    LLM verdict to pass.
-  - Check the rewrite limit, the semantic cache lookup and the final
-    response, including its Sources footer.
-"""
+"""Unit tests for the LangGraph nodes."""
 
 from unittest import mock
 

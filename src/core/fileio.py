@@ -1,8 +1,4 @@
-"""Small file-system helpers shared across packages.
-
-Responsibilities:
-  - Write files atomically so readers never see a partial file
-"""
+"""Small file-system helpers shared across packages."""
 
 from __future__ import annotations
 
@@ -11,15 +7,7 @@ from pathlib import Path
 
 
 def atomic_write_text(path: Path, content: str) -> None:
-    """Write text to a path so an interrupted write leaves the old file.
-
-    The content goes to a sibling temp file first, then os.replace swaps
-    it in. A crash mid-write leaves the previous file untouched.
-
-    Args:
-        path: Destination file path. Its parent directory must exist.
-        content: UTF-8 text to write.
-    """
+    """Write UTF-8 text through a sibling temporary file and atomically replace the destination."""
     tmp_path = path.with_name(f"{path.name}.tmp")
     try:
         tmp_path.write_text(content, encoding="utf-8")
