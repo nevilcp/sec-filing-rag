@@ -8,6 +8,7 @@ from src.agent.state import QueryCategory
 
 
 class SourceCitation(BaseModel):
+    cik: str = ""
     ticker: str
     company_name: str
     form_type: str

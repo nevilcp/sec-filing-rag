@@ -34,11 +34,19 @@ def test_process_input_fallback_string(mock_invoke):
 
 @mock.patch("src.agent.nodes._cache")
 def test_cache_check_hit(mock_cache):
-    mock_cache.return_value.lookup.return_value = "cached answer"
+    mock_cache.return_value.lookup.return_value = {
+        "final_response": "cached answer",
+        "retrieved_docs": [{"text": "source", "metadata": {"ticker": "AAPL"}}],
+        "query_category": "temporal",
+        "retrieval_grade": "relevant",
+    }
     state = ComplianceState(query="test")
     res = cache_check(state)
     assert res["cache_hit"] is True
     assert res["final_response"] == "cached answer"
+    assert res["retrieved_docs"][0]["metadata"]["ticker"] == "AAPL"
+    assert res["query_category"] == "temporal"
+    assert res["retrieval_grade"] == "relevant"
 
 
 @mock.patch("src.agent.nodes._cache")
@@ -190,7 +198,7 @@ def test_cache_check_uses_original_query_after_rewrite(mock_cache):
 
     cache_check(ComplianceState(query="rewritten", original_query="original"))
 
-    mock_cache.return_value.lookup.assert_called_once_with("original")
+    mock_cache.return_value.lookup.assert_called_once_with("original", company_filter=None)
 
 
 @mock.patch("src.agent.nodes.invoke_with_rate_limit")
@@ -207,6 +215,16 @@ def test_respond_after_rewrite_stores_final_text_under_original_query(mock_cache
     assert "Sources:" in stored_text
     assert stored_text == res["final_response"]
     assert "<user_query>\noriginal\n</user_query>" in mock_invoke.call_args.args[1]
+    assert mock_cache.return_value.store.call_args.kwargs["retrieved_docs"] == [doc]
+
+
+@mock.patch("src.agent.nodes._cache")
+def test_cache_check_passes_company_filter(mock_cache):
+    mock_cache.return_value.lookup.return_value = None
+
+    cache_check(ComplianceState(query="risks", company_filter="MSFT"))
+
+    mock_cache.return_value.lookup.assert_called_once_with("risks", company_filter="MSFT")
 
 
 def test_respond_cache_hit_returns_stored_text_with_sources_unchanged():

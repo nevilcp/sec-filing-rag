@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 
 async def main_async() -> None:
-    """Evaluate answer relevance on recorded CHAIN spans and upload annotations to Phoenix."""
+    """Evaluate completed query answers and upload relevance annotations to Phoenix."""
     base_url = f"http://{config.PHOENIX_HOST}:{config.PHOENIX_PORT}"
     logger.info("Connecting to Phoenix Client at %s...", base_url)
     px_client = Client(base_url=base_url)
@@ -33,9 +33,9 @@ async def main_async() -> None:
         )
         return
 
-    parent_spans = df[df["span_kind"] == "CHAIN"]
-    if parent_spans.empty:
-        logger.warning("No CHAIN spans found. Unable to evaluate.")
+    answer_spans = df[(df["span_kind"] == "CHAIN") & (df["name"] == "query_endpoint") & (df["status_code"] == "OK")]
+    if answer_spans.empty:
+        logger.warning("No completed query answers found. Unable to evaluate.")
         return
 
     logger.info("Initializing Groq LLM Evaluator...")
@@ -59,7 +59,7 @@ async def main_async() -> None:
     logger.info("Running evaluations...")
     with suppress_tracing():
         results_df = await async_evaluate_dataframe(
-            dataframe=parent_spans,
+            dataframe=answer_spans,
             evaluators=evaluators,
             concurrency=config.EVAL_CONCURRENCY,
         )

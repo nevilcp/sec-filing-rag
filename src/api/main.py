@@ -23,8 +23,9 @@ _api_log = get_api_logger()
 
 # Configure handlers before importing modules that may log during import.
 from src.agent.graph import compile_graph
+from src.agent.nodes import _cache
 from src.api.routes import router
-from src.rag.vector_store import get_filings_collection
+from src.rag.vector_store import get_filings_collection, get_qdrant_client
 
 
 class _AccessLogMiddleware(BaseHTTPMiddleware):
@@ -60,16 +61,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             }
         },
     )
-    get_filings_collection()
-    app.state.graph = compile_graph()
-    app.state.metrics = {
-        "total_queries_served": 0,
-        "cache_hits": 0,
-        "rewrite_count_total": 0,
-    }
-    _app_log.info("SEC RAG API startup complete")
-    yield
-    _app_log.info("SEC RAG API shutting down")
+    client = get_qdrant_client()
+    try:
+        get_filings_collection()
+        app.state.graph = compile_graph()
+        app.state.metrics = {
+            "total_queries_served": 0,
+            "cache_hits": 0,
+            "rewrite_count_total": 0,
+        }
+        _app_log.info("SEC RAG API startup complete")
+        yield
+    finally:
+        _app_log.info("SEC RAG API shutting down")
+        client.close()
+        _cache.cache_clear()
+        get_filings_collection.cache_clear()
+        get_qdrant_client.cache_clear()
 
 
 app = FastAPI(title="SEC Compliance RAG API", lifespan=lifespan)

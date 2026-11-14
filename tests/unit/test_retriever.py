@@ -100,3 +100,21 @@ def test_retrieve_fallback_when_all_filtered(mock_rerank, mock_sparse, mock_dens
     results = retrieve("query")
 
     assert len(results) == 0
+
+
+@mock.patch("src.rag.retriever.dense_search", return_value=[])
+@mock.patch("src.rag.retriever.sparse_search", return_value=[])
+def test_company_filter_applies_to_both_indexes(mock_sparse, mock_dense):
+    retrieve("What are the supply chain risks?", company_filter=" aapl ")
+
+    assert mock_dense.call_args.kwargs["filter_ticker"] == "AAPL"
+    assert mock_sparse.call_args.kwargs["filter_ticker"] == "AAPL"
+
+
+@mock.patch("src.rag.retriever.dense_search", return_value=[])
+@mock.patch("src.rag.retriever.sparse_search", return_value=[])
+def test_explicit_ticker_overrides_company_filter_for_both_indexes(mock_sparse, mock_dense):
+    retrieve("What risks does MSFT disclose?", company_filter="AAPL")
+
+    assert mock_dense.call_args.kwargs["filter_ticker"] == "MSFT"
+    assert mock_sparse.call_args.kwargs["filter_ticker"] == "MSFT"

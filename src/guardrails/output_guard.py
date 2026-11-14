@@ -5,12 +5,13 @@ from __future__ import annotations
 from opentelemetry.trace import Status, StatusCode
 from presidio_anonymizer.entities import OperatorConfig
 
+from src.core import config
 from src.core.llm_factory import (
     get_output_guard_llm,
     invoke_with_rate_limit,
 )
 from src.core.logging import get_logger
-from src.core.rate_limiter import get_output_guard_limiter
+from src.core.rate_limiter import RateLimitExhausted, estimate_llm_tokens, get_output_guard_limiter
 from src.core.tracing import chain_span, set_span_output
 from src.guardrails.pii import PII_ENTITIES, analyzer, anonymizer
 
@@ -59,19 +60,48 @@ _LEGAL_ADVICE_PROMPT = (
     "Classification:"
 )
 
+# Keep each classifier request within its token budget, including the policy prompt.
+_CLASSIFIER_CHUNK_SIZE = 4000
+_CLASSIFIER_CHUNK_OVERLAP = 400
+
+
+def _classifier_chunk_size(token_budget: int) -> int:
+    """Fit policy, response text, and completion allowance into the account's token budget."""
+    prompt_budget = token_budget - config.OUTPUT_GUARD_MAX_OUTPUT_TOKENS
+    if estimate_llm_tokens(_LEGAL_ADVICE_PROMPT.format(text="x")) > prompt_budget:
+        raise RateLimitExhausted("Output guard token budget is too small for its policy and completion allowance.")
+    low, high = 1, _CLASSIFIER_CHUNK_SIZE
+    while low < high:
+        middle = (low + high + 1) // 2
+        if estimate_llm_tokens(_LEGAL_ADVICE_PROMPT.format(text="x" * middle)) <= prompt_budget:
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
 
 def _is_definitive_legal_advice(text: str) -> bool:
-    prompt = _LEGAL_ADVICE_PROMPT.format(text=text)
-    decision = (
-        invoke_with_rate_limit(
-            get_output_guard_llm(),
-            prompt,
-            get_output_guard_limiter(),
+    limiter = get_output_guard_limiter()
+    chunk_size = _classifier_chunk_size(limiter.stats()["tpm_limit"])
+    overlap = min(_CLASSIFIER_CHUNK_OVERLAP, chunk_size // 4)
+    for start in range(0, len(text), chunk_size - overlap):
+        prompt = _LEGAL_ADVICE_PROMPT.format(text=text[start : start + chunk_size])
+        decision = (
+            invoke_with_rate_limit(
+                get_output_guard_llm(),
+                prompt,
+                limiter,
+            )
+            .strip()
+            .upper()
         )
-        .strip()
-        .upper()
-    )
-    return "VIOLATION" in decision
+        if "VIOLATION" in decision:
+            return True
+        if "COMPLIANT" not in decision:
+            raise RuntimeError("Output guard did not return a policy classification.")
+        if start + chunk_size >= len(text):
+            break
+    return False
 
 
 def validate_output(response: str) -> tuple[str, list[str]]:

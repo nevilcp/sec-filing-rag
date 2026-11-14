@@ -69,6 +69,7 @@ def _build_groq_llm(
     *,
     reasoning_effort: str | None = None,
     reasoning_format: str | None = None,
+    max_tokens: int | None = None,
 ) -> ChatGroq:
     kwargs: dict = {
         "model": model_name,
@@ -80,6 +81,8 @@ def _build_groq_llm(
         kwargs["reasoning_effort"] = reasoning_effort
     if reasoning_format is not None:
         kwargs["reasoning_format"] = reasoning_format
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
     return ChatGroq(**kwargs)
 
 
@@ -165,6 +168,8 @@ def get_output_guard_llm() -> ChatGroq:
         _require_groq_api_key(),
         config.OUTPUT_GUARD_MODEL,
         0.0,
+        reasoning_effort="low",
+        max_tokens=config.OUTPUT_GUARD_MAX_OUTPUT_TOKENS,
     )
 
 

@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sec-financial-compliance-rag"
 version = "0.1.0"
-description = "Production-grade SEC Financial Compliance RAG system scaffold"
+description = "Retrieval-augmented analysis of SEC filings"
 requires-python = ">=3.11"
 dependencies = [
-  "langchain>=0.2.16",
+  "langchain-core>=0.2.16",
   "langgraph>=0.2.34",
   "langchain-text-splitters>=0.3.0",
   "langchain-google-genai>=1.0.10",
@@ -43,11 +43,13 @@ dev = [
 ]
 
 [project.scripts]
-ingest    = "src.rag.ingest:main"
-api       = "src.api.run:main"
-evaluate  = "src.eval.run_phoenix_evals:main"
-gradio    = "app.gradio_app:main"
-phoenix   = "src.api.run:run_phoenix"
+ingest = "src.rag.ingest:main"
+api = "src.api.run:main"
+evaluate = "src.eval.run_phoenix_evals:main"
+gradio = "app.gradio_app:main"
+phoenix = "src.api.run:run_phoenix"
+run-limited = "src.core.memory_limit:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*", "app*"]
@@ -60,8 +62,8 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "D", "W505", "RUF002", "RUF003", "ERA001"]
-# Docstrings are optional; retained summaries use imperative mood and standard spacing.
+select = ["E", "F", "I", "W", "UP", "D", "RUF002", "RUF003", "ERA001"]
+# Allow missing docstrings; check the style of retained summaries.
 ignore = ["E501", "D1", "D203", "D213"]
 
 [tool.ruff.lint.pycodestyle]
@@ -69,6 +71,3 @@ max-doc-length = 120
 
 [tool.ruff.lint.per-file-ignores]
 "src/api/main.py" = ["E402"]
-
-[tool.ruff.format]
-quote-style = "double"

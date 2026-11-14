@@ -1,17 +1,16 @@
-# Python virtual environments
+# Local environments and secrets.
 .venv/
 venv/
 env/
 ENV/
 .env
 
-# Compiled Python bytecode
+# Compiled Python files.
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 
-# Caching and tooling
+# Tool artifacts.
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -20,33 +19,30 @@ htmlcov/
 .tox/
 .nox/
 
-# Python packaging artifacts
+# Build artifacts.
 dist/
 build/
 *.egg-info/
 *.egg
 .eggs/
 
-# System metadata
+# System metadata.
 .DS_Store
 .ipynb_checkpoints/
 Thumbs.db
 
-# Antigravity agent configurations and rules
+# Local tool settings.
 .agents/
 
-# Vectorstore, BM25 indices, and downloaded EDGAR XML staging files
+# Downloaded filings and retrieval artifacts.
 data/
-!data/.gitkeep
 
-# Ignore log files but keep the directory structure
+# Generated logs.
 logs/**/*.log
 logs/**/*.log.*
-!logs/**/.gitkeep
-!logs/README.md
 
-# Experimental scratchpads
+# Local scratch files.
 miscellaneous/
 
-# Local documentation
+# Local documentation.
 docs/

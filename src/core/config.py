@@ -31,6 +31,8 @@ LOG_ROTATION_BACKUP_COUNT = 14
 
 INPUT_GUARD_MODEL = "meta-llama/llama-prompt-guard-2-86m"
 OUTPUT_GUARD_MODEL = "openai/gpt-oss-safeguard-20b"
+OUTPUT_GUARD_TPM = int(os.getenv("OUTPUT_GUARD_TPM", "2000"))
+OUTPUT_GUARD_MAX_OUTPUT_TOKENS = 256
 # Prompt Guard 2 returns a probability; scores at or above this block.
 INPUT_GUARD_INJECTION_THRESHOLD = 0.5
 ROUTER_MODEL = "openai/gpt-oss-20b"
@@ -121,6 +123,7 @@ CORS_ORIGINS = (
 GRADIO_HOST = os.getenv("GRADIO_HOST", "0.0.0.0")
 GRADIO_PORT = int(os.getenv("GRADIO_PORT", "7860"))
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+QUERY_TIMEOUT_SECONDS = int(os.getenv("QUERY_TIMEOUT_SECONDS", "300"))
 
 
 PHOENIX_ENABLED = _env_flag("PHOENIX_ENABLED")

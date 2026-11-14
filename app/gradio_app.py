@@ -36,10 +36,10 @@ def _ticker_colours(ticker: str, seen: dict) -> tuple[str, str]:
     return seen[ticker]
 
 
-def _edgar_url(accession_number: str) -> str:
-    """Build the filing index URL using the accession number prefix as the CIK."""
+def _edgar_url(accession_number: str, cik: str = "") -> str:
+    """Build the filing index URL using the issuer CIK when available."""
     clean = accession_number.replace("-", "")
-    cik = clean[:10].lstrip("0")
+    cik = (cik or clean[:10]).lstrip("0")
     return f"https://www.sec.gov/Archives/edgar/data/{cik}/{clean}/{accession_number}-index.htm"
 
 
@@ -224,7 +224,7 @@ def build_citations_html(sources: list[dict]) -> str:
         period = html.escape(s.get("period_of_report", "—"))
 
         text_col, bg_col = _ticker_colours(ticker, seen_tickers)
-        edgar_href = html.escape(_edgar_url(accession), quote=True) if accession else "#"
+        edgar_href = html.escape(_edgar_url(accession, s.get("cik", "")), quote=True) if accession else "#"
 
         cards_html += f"""
         <div class="citation-card">
@@ -379,7 +379,7 @@ def submit_query(
         payload["company_filter"] = comp_filter
 
     try:
-        response = requests.post(QUERY_URL, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
+        response = requests.post(QUERY_URL, json=payload, timeout=config.QUERY_TIMEOUT_SECONDS)
     except requests.exceptions.RequestException:
         error_msg = f"Could not connect to the backend API at {config.API_BASE_URL}."
         history.append({"role": "user", "content": user_text})

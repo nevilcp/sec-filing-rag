@@ -59,6 +59,7 @@ def _to_citations(docs: list[RetrievedDoc]) -> list[SourceCitation]:
         meta = _doc_meta(doc)
         citations.append(
             SourceCitation(
+                cik=meta.get("cik", ""),
                 ticker=meta.get("ticker", ""),
                 company_name=meta.get("company_name", ""),
                 form_type=meta.get("form_type", ""),

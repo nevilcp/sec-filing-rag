@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from FlagEmbedding import BGEM3FlagModel
+from typing import TYPE_CHECKING
 
 from src.core import config
 from src.core.lazy import locked_singleton
 from src.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from FlagEmbedding import BGEM3FlagModel
 
 logger = get_logger(__name__)
 
 
 @locked_singleton
 def _get_model() -> BGEM3FlagModel:
+    from FlagEmbedding import BGEM3FlagModel
+
     logger.info("Loading BGE-M3 embedding model. The first call downloads weights (~2.3 GB).")
     return BGEM3FlagModel(
         config.BGE_M3_MODEL_NAME,

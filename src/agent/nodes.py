@@ -70,10 +70,10 @@ def process_input(state: ComplianceState) -> dict[str, Any]:
 
 def cache_check(state: ComplianceState) -> dict[str, Any]:
     """Look up the original query and return a state update for a cache hit or miss."""
-    cached = _cache().lookup(_original_query(state))
+    cached = _cache().lookup(_original_query(state), company_filter=state.get("company_filter"))
     if cached is not None:
         logger.info("cache_check hit")
-        return {"cache_hit": True, "final_response": cached}
+        return {**cached, "cache_hit": True}
     logger.info("cache_check miss")
     return {"cache_hit": False}
 
@@ -234,6 +234,13 @@ def respond(state: ComplianceState) -> dict[str, Any]:
     sources_text = _format_sources(docs)
 
     final = f"{response_text}{sources_text}"
-    _cache().store(query_text, final)
+    _cache().store(
+        query_text,
+        final,
+        company_filter=state.get("company_filter"),
+        retrieved_docs=docs,
+        query_category=category,
+        retrieval_grade=state.get("retrieval_grade", "relevant"),
+    )
     logger.info("respond complete")
     return {"final_response": final}

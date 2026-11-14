@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      # The model wheel lands in the pip cache restored by setup-python.
+      # Reuse setup-python's pip cache for the model wheel.
       - name: Download spaCy model
         run: python -m spacy download en_core_web_lg
 

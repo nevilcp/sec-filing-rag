@@ -31,7 +31,7 @@ class RateLimitExhausted(Exception):
 # Per model: requests/minute, requests/day, tokens/minute, tokens/day.
 _MODEL_LIMITS: dict[str, tuple[int, int, int, int]] = {
     "meta-llama/llama-prompt-guard-2-86m": (30, 14_400, 15_000, 500_000),
-    "openai/gpt-oss-safeguard-20b": (30, 1_000, 8_000, 200_000),
+    "openai/gpt-oss-safeguard-20b": (30, 1_000, config.OUTPUT_GUARD_TPM, 200_000),
     "openai/gpt-oss-20b": (30, 1_000, 8_000, 200_000),
     "openai/gpt-oss-120b": (30, 1_000, 8_000, 200_000),
     "gemini-3.5-flash": (15, 1_500, 1_000_000, 5_000_000),

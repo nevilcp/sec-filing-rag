@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
-
-from sentence_transformers import CrossEncoder
+from typing import TYPE_CHECKING, Any
 
 from src.core import config
 from src.core.constants import KNOWN_REGULATIONS, KNOWN_TICKERS
@@ -15,6 +13,9 @@ from src.core.logging import get_logger
 from src.rag.bm25_index import sparse_search
 from src.rag.vector_store import dense_search
 
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
+
 logger = get_logger(__name__)
 # Damping constant in the RRF score 1 / (k + rank).
 _RRF_K = 60
@@ -22,6 +23,8 @@ _RRF_K = 60
 
 @locked_singleton
 def _get_reranker() -> CrossEncoder:
+    from sentence_transformers import CrossEncoder
+
     return CrossEncoder(config.BGE_RERANKER_MODEL_NAME)
 
 
@@ -103,7 +106,7 @@ def retrieve(query_text: str, company_filter: str | None = None) -> list[dict[st
     else:
         logger.info("No ticker detected in query")
 
-    effective_ticker = ticker_match or company_filter
+    effective_ticker = ticker_match or (company_filter.strip().upper() if company_filter else None)
 
     dense_results = dense_search(
         query_text,
@@ -115,7 +118,7 @@ def retrieve(query_text: str, company_filter: str | None = None) -> list[dict[st
         extra={"extra": {"count": len(dense_results)}},
     )
 
-    sparse_results = sparse_search(query_text, top_k=config.TOP_K_RETRIEVAL_COUNT)
+    sparse_results = sparse_search(query_text, top_k=config.TOP_K_RETRIEVAL_COUNT, filter_ticker=effective_ticker)
     logger.info(
         "Sparse retrieval complete",
         extra={"extra": {"count": len(sparse_results)}},

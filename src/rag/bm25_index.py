@@ -73,7 +73,7 @@ def _get_bm25_payload() -> dict[str, Any]:
         return _BM25_PAYLOAD
 
 
-def sparse_search(query_text: str, top_k: int) -> list[dict[str, Any]]:
+def sparse_search(query_text: str, top_k: int, filter_ticker: str | None = None) -> list[dict[str, Any]]:
     """Return BM25 matches, or an empty list for a query without tokens or an empty corpus."""
     tokenized_query = _tokenize(query_text)
 
@@ -84,13 +84,25 @@ def sparse_search(query_text: str, top_k: int) -> list[dict[str, Any]]:
     index: bm25s.BM25 = payload["index"]
     documents: list[dict[str, Any]] = payload["documents"]
 
-    if not documents:
+    if not documents or top_k <= 0:
         return []
 
-    results, scores = index.retrieve([tokenized_query], corpus=documents, k=top_k)
-
-    doc_results = results[0]
-    doc_scores = scores[0]
+    if filter_ticker:
+        matching_indices = [
+            i
+            for i, doc in enumerate(documents)
+            if doc.get("metadata", {}).get("ticker", "").upper() == filter_ticker.upper()
+        ]
+        if not matching_indices:
+            return []
+        scores = index.get_scores(tokenized_query)
+        ranked_indices = sorted(matching_indices, key=lambda i: float(scores[i]), reverse=True)[:top_k]
+        doc_results = [documents[i] for i in ranked_indices]
+        doc_scores = [scores[i] for i in ranked_indices]
+    else:
+        results, scores = index.retrieve([tokenized_query], corpus=documents, k=min(top_k, len(documents)))
+        doc_results = results[0]
+        doc_scores = scores[0]
 
     normalized_results: list[dict[str, Any]] = []
     for doc, score in zip(doc_results, doc_scores):
